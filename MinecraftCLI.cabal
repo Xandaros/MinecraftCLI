@@ -16,7 +16,10 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Network.Protocol.Minecraft
+                     , Network.Protocol.Minecraft.Network
   build-depends:       base >= 4.7 && < 5
+                     , network
+                     , bytestring
   default-language:    Haskell2010
 
 executable MinecraftCLI
