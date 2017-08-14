@@ -8,7 +8,7 @@ license-file:        LICENSE
 author:              Xandaros
 maintainer:          mz-bremerhaven@gmail.com
 copyright:           (C) 2017 Xandaros
-category:            Web
+category:            Network
 build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
@@ -19,7 +19,7 @@ library
   build-depends:       base >= 4.7 && < 5
   default-language:    Haskell2010
 
-executable MinecraftCLI-exe
+executable MinecraftCLI
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
