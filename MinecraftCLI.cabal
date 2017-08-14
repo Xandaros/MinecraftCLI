@@ -3,7 +3,7 @@ version:             0.1.0.0
 -- synopsis:
 -- description:
 homepage:            https://github.com/Xandaros/MinecraftCLI#readme
-license:             BSD3
+license:             BSD2
 license-file:        LICENSE
 author:              Xandaros
 maintainer:          mz-bremerhaven@gmail.com
