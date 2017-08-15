@@ -8,9 +8,7 @@ import Data.Word
 import GHC.Generics
 import Network.Protocol.Minecraft.Network.Types
 
-data Packet = PacketHandshake PacketHandshakePayload
-            | PacketLoginStart PacketLoginStartPayload
-            | PacketEncryptionRequest PacketEncryptionRequestPayload
+data Packet = PacketEncryptionRequest PacketEncryptionRequestPayload
             deriving (Show)
 
 data ConnectionState = Handshaking
@@ -55,13 +53,23 @@ packConnectionState Playing       = pack (3 :: VarInt)
 
 data PacketEncryptionRequestPayload = PacketEncryptionRequestPayload { serverID :: Text
                                                                      , pubKeyLen :: VarInt
-                                                                     , pubKey :: [Word8]
+                                                                     , pubKey :: ByteString
                                                                      , verifyTokenLen :: VarInt
-                                                                     , verifyToken :: [Word8]
+                                                                     , verifyToken :: ByteString
                                                                      } deriving (Generic, Show)
 
-instance Packable PacketEncryptionRequestPayload
-
 instance HasPacketID PacketEncryptionRequestPayload where
+    getPacketID _ = 0x01
+    mode _ = LoggingIn
+
+data PacketEncryptionResponsePayload = PacketEncryptionResponsePayload { secretLen :: VarInt
+                                                                       , secret :: ByteString
+                                                                       , responseVerifyTokenLen :: VarInt
+                                                                       , responseVerifyToken :: ByteString
+                                                                       } deriving (Generic)
+
+instance Packable PacketEncryptionResponsePayload
+
+instance HasPacketID PacketEncryptionResponsePayload where
     getPacketID _ = 0x01
     mode _ = LoggingIn

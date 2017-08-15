@@ -3,6 +3,8 @@
 module Network.Protocol.Minecraft.Network.Types where
 
 import           Data.Bits
+import qualified Data.ByteString as BS
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Builder as BSB
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as BSL
@@ -78,6 +80,9 @@ instance Packable a => Packable (Maybe a) where
 instance Packable a => Packable [a] where
     pack [] = mempty
     pack (x:xs) = pack x <> pack xs
+
+instance Packable ByteString where
+    pack = pack . BS.unpack
 
 --------------------------------------------------------------------------------------------------------------
 

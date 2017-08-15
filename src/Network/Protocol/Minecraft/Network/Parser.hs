@@ -14,8 +14,6 @@ import           Data.Word
 import           Network.Protocol.Minecraft.Network.Packet
 import           Network.Protocol.Minecraft.Network.Types
 
-import Debug.Trace
-
 parsePacket :: ConnectionState -> ByteString -> Either String Packet
 parsePacket state = parseOnly (packetParser state)
 
@@ -33,9 +31,9 @@ encryptionRequestParser :: Parser PacketEncryptionRequestPayload
 encryptionRequestParser = do
     serverID       <- stringParser
     pubKeyLen      <- varIntParser
-    pubKey         <- word8ArrayParser $ fromIntegral pubKeyLen
+    pubKey         <- take $ fromIntegral pubKeyLen
     verifyTokenLen <- varIntParser
-    verifyToken    <- word8ArrayParser $ fromIntegral verifyTokenLen
+    verifyToken    <- take $ fromIntegral verifyTokenLen
     pure $ PacketEncryptionRequestPayload serverID pubKeyLen pubKey verifyTokenLen verifyToken
 
 stringParser :: Parser Text
