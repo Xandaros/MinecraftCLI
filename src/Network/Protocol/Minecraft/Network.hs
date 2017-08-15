@@ -1,4 +1,6 @@
 {-# LANGUAGE BinaryLiterals, GeneralizedNewtypeDeriving, ScopedTypeVariables, RecordWildCards #-}
+{-# LANGUAGE DeriveGeneric, DefaultSignatures, FlexibleContexts, TypeOperators #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Protocol.Minecraft.Network where
 
 import           Data.Bits
@@ -6,54 +8,41 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as BSL
-import           Data.ByteString (ByteString(..))
+import           Data.ByteString (ByteString)
 import           Data.Int
 import           Data.Monoid
+import           Data.Text (Text)
 import           Data.Word
+import           GHC.Generics
 import           GHC.IO.Handle
 import           Network.Socket hiding (send, sendTo, recv, recvFrom)
-import           Network.Socket.ByteString
 import           System.IO (IOMode(..))
 
-import Debug.Trace
+import Network.Protocol.Minecraft.Network.Types
 
 data ConnectionState = Handshaking
                      | LoggingIn
                      | Playing
                      | GettingStatus
+                     deriving (Show)
 
-data Packet = PacketHandshake { protocolVersion :: VarInt
-                              , address :: String
-                              , port :: Word16
-                              , nextState :: ConnectionState
-                              }
-            | PacketUnknown ByteString
+data PacketHandshake = PacketHandshake { protocolVersion :: VarInt
+                                       , address :: Text
+                                       , port :: Word16
+                                       , nextState :: ConnectionState
+                                       } deriving (Generic, Show)
+instance Packable PacketHandshake
 
-newtype VarInt = VarInt {unVarInt :: Int32}
-    deriving (Show, Bits, Eq, Ord, Num)
-newtype VarLong = VarLong {unVarLong :: Int64}
-    deriving (Show, Bits, Eq, Ord, Num)
+instance HasPacketID PacketHandshake where
+    getPacketID _ = 0x00
 
-getPacketID :: Packet -> VarInt
-getPacketID PacketHandshake{} = 0x00
+data PacketUnknown = PacketUnknown ByteString
 
-packVarInt :: VarInt -> Builder
-packVarInt = mconcat . fmap BSB.word8 . packVarVal 5 . unVarInt
+class HasPacketID f where
+    getPacketID :: f -> VarInt
 
-packVarLong :: VarLong -> Builder
-packVarLong = mconcat . fmap BSB.word8 . packVarVal 10 . unVarLong
-
-packVarVal :: (Show a, Bits a, Integral a) => Int -> a -> [Word8]
-packVarVal _ 0 = [0]
-packVarVal maxSegs i = go i maxSegs
-    where go :: (Show a, Bits a, Integral a) => a -> Int -> [Word8]
-          go _ 0 = []
-          go 0 _ = []
-          go i maxSegs = if newVal == 0
-                            then [temp]
-                            else temp `setBit` 7 : go newVal (maxSegs - 1)
-              where temp = fromIntegral i .&. 0b01111111 :: Word8
-                    newVal = i `shiftR` 7
+instance Packable ConnectionState where
+    pack = packConnectionState
 
 unpackVarInt :: ByteString -> VarInt
 unpackVarInt = VarInt . unpackVarVal
@@ -70,25 +59,16 @@ unpackVarVal bs = go $ BS.unpack bs
                          else fromIntegral x .&. 0b01111111
 
 packConnectionState :: ConnectionState -> Builder
-packConnectionState Handshaking   = packVarInt 0
-packConnectionState GettingStatus = packVarInt 1
-packConnectionState LoggingIn     = packVarInt 2
-packConnectionState Playing       = packVarInt 3
+packConnectionState Handshaking   = pack (0 :: VarInt)
+packConnectionState GettingStatus = pack (1 :: VarInt)
+packConnectionState LoggingIn     = pack (2 :: VarInt)
+packConnectionState Playing       = pack (3 :: VarInt)
 
-packString :: String -> Builder
-packString = BSB.stringUtf8
-
-packPayload :: Packet -> Builder
-packPayload PacketHandshake{..} = packVarInt protocolVersion
-                               <> packString address
-                               <> BSB.word16BE port
-                               <> packConnectionState nextState
-
-packPacket :: Packet -> Builder
-packPacket packet = (packVarInt $ packetIDLength + payloadLength) <> packetID <> payload
-    where payload = packPayload packet
+packPacket :: PacketHandshake -> Builder
+packPacket packet = (pack $ (packetIDLength + payloadLength :: VarInt)) <> packetID <> payload
+    where payload = pack packet
           payloadLength = fromIntegral $ builderLength payload
-          packetID = packVarInt $ getPacketID packet
+          packetID = pack $ (getPacketID packet :: VarInt)
           packetIDLength = fromIntegral $ builderLength packetID
 
 builderLength :: Builder -> Int64
@@ -112,10 +92,10 @@ test = do
 
     putStrLn "Handshake sent"
 
-    test <- BS.hGetContents handle
+    response <- BS.hGetContents handle
 
     putStrLn "Response received:"
-    print $ BS.unpack test
+    print $ BS.unpack response
 
     hClose handle
     pure ()

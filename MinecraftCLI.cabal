@@ -17,15 +17,17 @@ library
   hs-source-dirs:      src
   exposed-modules:     Network.Protocol.Minecraft
                      , Network.Protocol.Minecraft.Network
+                     , Network.Protocol.Minecraft.Network.Types
   build-depends:       base >= 4.7 && < 5
                      , network
                      , bytestring
+                     , text
   default-language:    Haskell2010
 
 executable MinecraftCLI
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall
   build-depends:       base
                      , MinecraftCLI
   default-language:    Haskell2010
