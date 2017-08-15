@@ -18,16 +18,20 @@ library
   exposed-modules:     Network.Protocol.Minecraft
                      , Network.Protocol.Minecraft.Network
                      , Network.Protocol.Minecraft.Network.Types
+                     , Network.Protocol.Minecraft.Network.Packet
+                     , Network.Protocol.Minecraft.Network.Parser
   build-depends:       base >= 4.7 && < 5
                      , network
                      , bytestring
                      , text
+                     , attoparsec
   default-language:    Haskell2010
+  ghc-options:       -fdefer-typed-holes -Wall -Wno-name-shadowing
 
 executable MinecraftCLI
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , MinecraftCLI
   default-language:    Haskell2010
