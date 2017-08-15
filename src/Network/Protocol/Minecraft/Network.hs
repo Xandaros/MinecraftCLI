@@ -26,6 +26,10 @@ data ConnectionState = Handshaking
                      | GettingStatus
                      deriving (Show)
 
+class HasPacketID f where
+    getPacketID :: f -> VarInt
+    mode :: f -> ConnectionState
+
 data PacketHandshake = PacketHandshake { protocolVersion :: VarInt
                                        , address :: Text
                                        , port :: Word16
@@ -35,11 +39,17 @@ instance Packable PacketHandshake
 
 instance HasPacketID PacketHandshake where
     getPacketID _ = 0x00
+    mode _ = Handshaking
+
+data PacketLoginStart = PacketLoginStart { username :: Text
+                                         } deriving (Generic, Show)
+instance Packable PacketLoginStart
+
+instance HasPacketID PacketLoginStart where
+    getPacketID _ = 0x00
+    mode _ = LoggingIn
 
 data PacketUnknown = PacketUnknown ByteString
-
-class HasPacketID f where
-    getPacketID :: f -> VarInt
 
 instance Packable ConnectionState where
     pack = packConnectionState
@@ -64,7 +74,7 @@ packConnectionState GettingStatus = pack (1 :: VarInt)
 packConnectionState LoggingIn     = pack (2 :: VarInt)
 packConnectionState Playing       = pack (3 :: VarInt)
 
-packPacket :: PacketHandshake -> Builder
+packPacket :: (Packable a, HasPacketID a) => a -> Builder
 packPacket packet = (pack $ (packetIDLength + payloadLength :: VarInt)) <> packetID <> payload
     where payload = pack packet
           payloadLength = fromIntegral $ builderLength payload
@@ -73,6 +83,15 @@ packPacket packet = (pack $ (packetIDLength + payloadLength :: VarInt)) <> packe
 
 builderLength :: Builder -> Int64
 builderLength = BSL.length . BSB.toLazyByteString
+
+hGetPacketLength :: Handle -> IO VarInt
+hGetPacketLength = fmap (unpackVarInt . BS.pack . reverse) . go []
+    where go :: [Word8] -> Handle -> IO [Word8]
+          go rest handle = do
+              fstByte <- flip BS.index 0 <$> BS.hGet handle 1
+              if fstByte `testBit` 7
+                 then go (fstByte : rest) handle
+                 else pure $ fstByte : rest
 
 test :: IO ()
 test = do
@@ -83,7 +102,7 @@ test = do
     putStrLn "Connected"
 
     handle <- socketToHandle sock ReadWriteMode
-    hSetBuffering handle (BlockBuffering Nothing)
+    --hSetBuffering handle (BlockBuffering Nothing)
 
     putStrLn "Got handle"
 
@@ -92,9 +111,16 @@ test = do
 
     putStrLn "Handshake sent"
 
-    response <- BS.hGetContents handle
+    let loginStart = PacketLoginStart "Xandaros"
+    BSB.hPutBuilder handle $ packPacket loginStart
+
+    putStrLn "LoginStart sent"
+
+    len <- hGetPacketLength handle
+    response <- BS.hGet handle (fromIntegral len)
 
     putStrLn "Response received:"
+    print len
     print $ BS.unpack response
 
     hClose handle

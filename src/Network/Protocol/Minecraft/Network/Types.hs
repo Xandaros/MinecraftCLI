@@ -82,10 +82,10 @@ instance Packable a => Packable [a] where
 --------------------------------------------------------------------------------------------------------------
 
 newtype VarInt = VarInt {unVarInt :: Int32}
-    deriving (Show, Bits, Eq, Ord, Num)
+    deriving (Show, Bits, Eq, Ord, Num, Integral, Real, Enum)
 
 newtype VarLong = VarLong {unVarLong :: Int64}
-    deriving (Show, Bits, Eq, Ord, Num)
+    deriving (Show, Bits, Eq, Ord, Num, Integral, Real, Enum)
 
 instance Packable VarInt where
     pack = mconcat . fmap BSB.word8 . packVarVal 5 . unVarInt
