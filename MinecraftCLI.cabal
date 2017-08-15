@@ -17,6 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Network.Protocol.Minecraft
                      , Network.Protocol.Minecraft.Network
+                     , Network.Protocol.Minecraft.Network.Encoding
                      , Network.Protocol.Minecraft.Network.Types
                      , Network.Protocol.Minecraft.Network.Packet
                      , Network.Protocol.Minecraft.Network.Parser
@@ -29,6 +30,8 @@ library
                      , asn1-types
                      , x509
                      , cryptonite
+                     , transformers
+                     , mtl
   default-language:    Haskell2010
   ghc-options:       -fdefer-typed-holes -Wall -Wno-name-shadowing
 
