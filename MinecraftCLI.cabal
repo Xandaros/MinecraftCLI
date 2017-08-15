@@ -25,6 +25,10 @@ library
                      , bytestring
                      , text
                      , attoparsec
+                     , asn1-encoding
+                     , asn1-types
+                     , x509
+                     , cryptonite
   default-language:    Haskell2010
   ghc-options:       -fdefer-typed-holes -Wall -Wno-name-shadowing
 

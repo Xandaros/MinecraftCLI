@@ -3,15 +3,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Protocol.Minecraft.Network where
 
+import           Data.ASN1.BinaryEncoding (DER(..))
+import           Data.ASN1.Encoding
+import           Data.ASN1.Types(fromASN1)
 import           Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as BSL
-import           Data.ByteString (ByteString)
 import           Data.Int
 import           Data.Monoid
 import           Data.Word
+import           Data.X509
 import           GHC.IO.Handle
 import           Network.Socket hiding (send, sendTo, recv, recvFrom)
 import           System.IO (IOMode(..))
@@ -68,7 +71,17 @@ test = do
     putStrLn "Response received:"
     print len
     print $ BS.unpack response
-    print $ parsePacket LoggingIn response
+    let packet = parsePacket LoggingIn response
+    print packet
+
+    putStrLn "decoded pubkey:"
+
+    let (Right (PacketEncryptionRequest payload)) = packet
+
+    let (Right asn1) = decodeASN1' DER (BS.pack $ pubKey payload)
+        (Right (PubKeyRSA key, _)) = fromASN1 asn1
+
+    print key
 
     hClose handle
     pure ()
