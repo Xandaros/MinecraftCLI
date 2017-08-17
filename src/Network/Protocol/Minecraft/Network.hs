@@ -9,6 +9,7 @@ import qualified Data.ByteString.Builder as BSB
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Int
+import qualified Data.Text as Text
 import           Data.Monoid
 import           Data.Word
 import           GHC.IO.Handle
@@ -19,6 +20,7 @@ import Network.Protocol.Minecraft.Network.Encoding
 import Network.Protocol.Minecraft.Network.Packet
 import Network.Protocol.Minecraft.Network.Parser
 import Network.Protocol.Minecraft.Network.Types
+import Network.Protocol.Minecraft.Network.Yggdrasil
 
 packPacket :: (Packable a, HasPacketID a) => a -> Builder
 packPacket packet = (pack $ (packetIDLength + payloadLength :: VarInt)) <> packetID <> payload
@@ -76,6 +78,12 @@ test = do
 
     sharedSecret <- generateSharedKey
 
+    let serverHash = createServerHash (serverID encRequest) sharedSecret (pubKey encRequest)
+        joinRequest = JoinRequest "Your auth token" "Your UUID" (Text.pack serverHash)
+
+    joinSucc <- join joinRequest
+    putStrLn $ if joinSucc then "Join successful" else "Join failed"
+
     Just response <- encryptionResponse sharedSecret encRequest
 
     BSB.hPutBuilder handle $ packPacket response
@@ -84,7 +92,7 @@ test = do
 
     let Just aes = getCipher sharedSecret
 
-    let (decryptedResponse, dunno) = cfb8Decrypt aes sharedSecret response
+    let (decryptedResponse, _) = cfb8Decrypt aes sharedSecret response
 
     print . BS.unpack $ decryptedResponse
     print decryptedResponse

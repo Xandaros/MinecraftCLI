@@ -1,16 +1,17 @@
 {-# LANGUAGE RecordWildCards #-}
-module Network.Protocol.Minecraft.Network.Encoding ( generateSharedKey
-                                                   , encryptionResponse
-                                                   , decrypt
-                                                   , getCipher
-                                                   , cfb8Decrypt
-                                                   , cfb8Encrypt
-                                                   ) where
+module Network.Protocol.Minecraft.Network.Encoding where --( generateSharedKey
+                                                   --, encryptionResponse
+                                                   --, decrypt
+                                                   --, getCipher
+                                                   --, cfb8Decrypt
+                                                   --, cfb8Encrypt
+                                                   --) where
 
 import           Control.Monad
 import           Control.Monad.Trans.Maybe
 import           Crypto.Cipher.AES (AES128)
 import           Crypto.Cipher.Types
+import           Crypto.Hash
 import           Crypto.Error (CryptoFailable(..))
 import           Crypto.PubKey.RSA
 import qualified Crypto.PubKey.RSA.PKCS15 as RSA
@@ -21,8 +22,11 @@ import           Data.ASN1.Types(fromASN1)
 import           Data.Bits
 import qualified Data.ByteString as BS
 import           Data.ByteString (ByteString)
+import qualified Data.Text.Encoding as TE
+import           Data.Text (Text)
 import           Data.X509
 import           Network.Protocol.Minecraft.Network.Packet
+import           Numeric
 
 
 decodePubKey :: ByteString -> Maybe PublicKey
@@ -86,3 +90,16 @@ cfb8Decrypt c i = BS.foldl magic (BS.empty,i)
         pt = BS.head (ecbEncrypt c iv) `xor` d
         -- snoc on cipher always
         ivFinal = BS.tail iv `BS.snoc` d
+
+createServerHash :: Text -> ByteString -> ByteString -> String
+createServerHash serverId' secret pubKey =
+    let serverId = TE.encodeUtf8 serverId'
+        digest :: Digest SHA1
+        digest = hashFinalize $ hashUpdates hashInit [serverId, secret, pubKey]
+        protoHash :: Integer
+        protoHash = fst . head . readHex . show $ digest  -- FIXME
+        isNegative = protoHash `testBit` 159
+    in  if isNegative
+           then let hash = (2^160 - 1) `xor` (protoHash - 1)
+                in  "-" ++ showHex hash ""
+           else showHex protoHash ""

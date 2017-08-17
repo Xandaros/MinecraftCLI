@@ -21,6 +21,7 @@ library
                      , Network.Protocol.Minecraft.Network.Types
                      , Network.Protocol.Minecraft.Network.Packet
                      , Network.Protocol.Minecraft.Network.Parser
+                     , Network.Protocol.Minecraft.Network.Yggdrasil
   build-depends:       base >= 4.7 && < 5
                      , network
                      , bytestring
@@ -32,6 +33,11 @@ library
                      , cryptonite
                      , transformers
                      , mtl
+                     , servant
+                     , servant-client
+                     , http-client
+                     , http-client-tls
+                     , aeson
   default-language:    Haskell2010
   ghc-options:       -fdefer-typed-holes -Wall -Wno-name-shadowing
 
