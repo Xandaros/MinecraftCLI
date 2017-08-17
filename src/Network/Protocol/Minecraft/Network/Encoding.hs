@@ -3,6 +3,8 @@ module Network.Protocol.Minecraft.Network.Encoding ( generateSharedKey
                                                    , encryptionResponse
                                                    , decrypt
                                                    , getCipher
+                                                   , cfb8Decrypt
+                                                   , cfb8Encrypt
                                                    ) where
 
 import           Control.Monad
@@ -16,6 +18,8 @@ import           Crypto.Random (getRandomBytes)
 import           Data.ASN1.BinaryEncoding (DER(..))
 import           Data.ASN1.Encoding
 import           Data.ASN1.Types(fromASN1)
+import           Data.Bits
+import qualified Data.ByteString as BS
 import           Data.ByteString (ByteString)
 import           Data.X509
 import           Network.Protocol.Minecraft.Network.Packet
@@ -30,11 +34,10 @@ decodePubKey keyBytes = do
 generateSharedKey :: IO ByteString
 generateSharedKey = getRandomBytes 16
 
-getCipher :: ByteString -> Maybe (AES128, IV AES128)
+getCipher :: ByteString -> Maybe AES128
 getCipher secret = do
-    iv <- makeIV secret
     CryptoPassed cipher <- pure $ cipherInit secret
-    pure (cipher, iv)
+    pure cipher
 
 encryptionResponse :: ByteString -> PacketEncryptionRequestPayload -> IO (Maybe PacketEncryptionResponsePayload)
 encryptionResponse secret PacketEncryptionRequestPayload{..} = runMaybeT $ do
@@ -58,3 +61,28 @@ eitherToMaybe = either (const Nothing) Just
 
 eitherAToMaybeT :: Applicative m => m (Either a b) -> MaybeT m b
 eitherAToMaybeT = MaybeT . fmap eitherToMaybe
+
+-- Function taken from https://github.com/Lazersmoke/civskell/blob/ebf4d761362ee42935faeeac0fe447abe96db0b5/src/Civskell/Tech/Encrypt.hs#L154-L165
+-- Encrypt a bytestring using the cfb8 aes128 cipher, and the provided shift register
+cfb8Encrypt :: AES128 -> BS.ByteString -> BS.ByteString -> (BS.ByteString,BS.ByteString)
+cfb8Encrypt c i = BS.foldl magic (BS.empty,i)
+  where
+    -- Does a single step (one byte) of a CFB8 encryption
+    -- add the cipher text to the output, and return the updated shift register
+    magic (ds,iv) d = (ds `BS.snoc` ct,ivFinal)
+      where
+        -- use the MSB of the encrypted shift register to encrypt the current plaintext
+        ct = BS.head (ecbEncrypt c iv) `xor` d
+        -- shift the new ciphertext into the shift register
+        ivFinal = BS.tail iv `BS.snoc` ct
+
+-- Function taken from https://github.com/Lazersmoke/civskell/blob/ebf4d761362ee42935faeeac0fe447abe96db0b5/src/Civskell/Tech/Encrypt.hs#L167-L175
+-- Decrypt a bytestring using the cfb8 aes128 cipher, and the provided shift register
+cfb8Decrypt :: AES128 -> BS.ByteString -> BS.ByteString -> (BS.ByteString,BS.ByteString)
+cfb8Decrypt c i = BS.foldl magic (BS.empty,i)
+  where
+    magic (ds,iv) d = (ds `BS.snoc` pt,ivFinal)
+      where
+        pt = BS.head (ecbEncrypt c iv) `xor` d
+        -- snoc on cipher always
+        ivFinal = BS.tail iv `BS.snoc` d

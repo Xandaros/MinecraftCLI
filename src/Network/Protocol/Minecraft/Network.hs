@@ -57,7 +57,7 @@ test = do
 
     putStrLn "Handshake sent"
 
-    let loginStart = PacketLoginStartPayload "Xandaros"
+    let loginStart = PacketLoginStartPayload "Yotanido"
     BSB.hPutBuilder handle $ packPacket loginStart
 
     putStrLn "LoginStart sent"
@@ -80,12 +80,15 @@ test = do
 
     BSB.hPutBuilder handle $ packPacket response
 
-    len <- hGetPacketLength handle
-    response <- BS.hGet handle (fromIntegral len)
+    response <- BS.hGetContents handle
 
-    let Just (aes, iv) = getCipher sharedSecret
+    let Just aes = getCipher sharedSecret
 
-    print . BS.unpack . (decrypt aes iv) $ response
+    let (decryptedResponse, dunno) = cfb8Decrypt aes sharedSecret response
+
+    print . BS.unpack $ decryptedResponse
+    print decryptedResponse
+    print . BS.unpack $ response
 
     hClose handle
     pure ()
