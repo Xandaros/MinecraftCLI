@@ -110,6 +110,20 @@ packVarVal maxSegs' i' = go i' maxSegs'
               where temp = fromIntegral i .&. 0b01111111 :: Word8
                     newVal = i `shiftR` 7
 
+unpackVarInt :: ByteString -> VarInt
+unpackVarInt = VarInt . unpackVarVal
+
+unpackVarLong :: ByteString -> VarLong
+unpackVarLong = VarLong . unpackVarVal
+
+unpackVarVal :: (Integral a, Bits a, Num a) => ByteString -> a
+unpackVarVal bs = go $ BS.unpack bs
+    where go :: (Num a, Bits a) => [Word8] -> a
+          go [] = 0
+          go (x:xs) = if x `testBit` 7
+                         then go xs `shiftL` 7 .|. (fromIntegral x .&. 0b01111111)
+                         else fromIntegral x .&. 0b01111111
+
 -- TODO:
 -- Chat
 -- Entity Metadata

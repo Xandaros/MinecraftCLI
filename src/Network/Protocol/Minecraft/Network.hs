@@ -3,15 +3,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Protocol.Minecraft.Network where
 
-import           Data.Bits
+import           Control.Monad (void)
+import           Control.Monad.IO.Class
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Builder as BSB
-import           Data.ByteString.Builder (Builder)
-import qualified Data.ByteString.Lazy as BSL
-import           Data.Int
 import qualified Data.Text as Text
-import           Data.Monoid
-import           Data.Word
 import           GHC.IO.Handle
 import           Network.Socket hiding (send, sendTo, recv, recvFrom)
 import           System.IO (IOMode(..))
@@ -19,27 +14,7 @@ import           System.IO (IOMode(..))
 import Network.Protocol.Minecraft.Network.Encoding
 import Network.Protocol.Minecraft.Network.Packet
 import Network.Protocol.Minecraft.Network.Parser
-import Network.Protocol.Minecraft.Network.Types
 import Network.Protocol.Minecraft.Network.Yggdrasil
-
-packPacket :: (Packable a, HasPacketID a) => a -> Builder
-packPacket packet = (pack $ (packetIDLength + payloadLength :: VarInt)) <> packetID <> payload
-    where payload = pack packet
-          payloadLength = fromIntegral $ builderLength payload
-          packetID = pack $ (getPacketID packet :: VarInt)
-          packetIDLength = fromIntegral $ builderLength packetID
-
-builderLength :: Builder -> Int64
-builderLength = BSL.length . BSB.toLazyByteString
-
-hGetPacketLength :: Handle -> IO VarInt
-hGetPacketLength = fmap (unpackVarInt . BS.pack . reverse) . go []
-    where go :: [Word8] -> Handle -> IO [Word8]
-          go rest handle = do
-              fstByte <- flip BS.index 0 <$> BS.hGet handle 1
-              if fstByte `testBit` 7
-                 then go (fstByte : rest) handle
-                 else pure $ fstByte : rest
 
 test :: IO ()
 test = do
@@ -54,49 +29,52 @@ test = do
 
     putStrLn "Got handle"
 
-    let handshake = PacketHandshakePayload 335 "102.219.4.7" 25565 LoggingIn
-    BSB.hPutBuilder handle $ packPacket handshake
+    void $ runEncodedT (defaultEncodingState handle) $ do
+        let handshake = PacketHandshakePayload 335 "102.219.4.7" 25565 LoggingIn
+        sendPacket handshake
 
-    putStrLn "Handshake sent"
+        liftIO $ putStrLn "Handshake sent"
 
-    let loginStart = PacketLoginStartPayload "Yotanido"
-    BSB.hPutBuilder handle $ packPacket loginStart
+        let loginStart = PacketLoginStartPayload "Yotanido"
+        sendPacket loginStart
 
-    putStrLn "LoginStart sent"
+        liftIO $ putStrLn "LoginStart sent"
 
-    len <- hGetPacketLength handle
-    response <- BS.hGet handle (fromIntegral len)
+        response <- readPacket
 
-    putStrLn "Response received"
-    let packet = parsePacket LoggingIn response
+        liftIO $ putStrLn "Response received"
+        let packet = parsePacket LoggingIn response
 
-    putStrLn "decoded pubkey"
+        liftIO $ putStrLn "decoded pubkey"
 
-    let (Right (PacketEncryptionRequest encRequest)) = packet
+        let (Right (PacketEncryptionRequest encRequest)) = packet
 
-    putStrLn "Generating shared secret"
+        liftIO $ putStrLn "Generating shared secret"
 
-    sharedSecret <- generateSharedKey
+        sharedSecret <- liftIO $ generateSharedKey
 
-    let serverHash = createServerHash (serverID encRequest) sharedSecret (pubKey encRequest)
-        joinRequest = JoinRequest "Your auth token" "Your UUID" (Text.pack serverHash)
+        let serverHash = createServerHash (serverID encRequest) sharedSecret (pubKey encRequest)
+            joinRequest = JoinRequest "Your auth token" "Your UUID" (Text.pack serverHash)
 
-    joinSucc <- join joinRequest
-    putStrLn $ if joinSucc then "Join successful" else "Join failed"
+        joinSucc <- liftIO $ join joinRequest
+        liftIO $ putStrLn $ if joinSucc then "Join successful" else "Join failed"
 
-    Just response <- encryptionResponse sharedSecret encRequest
+        Just response <- liftIO $ encryptionResponse sharedSecret encRequest
+        sendPacket response
 
-    BSB.hPutBuilder handle $ packPacket response
+        True <- enableEncryption sharedSecret
+        pure ()
 
-    response <- BS.hGetContents handle
+        Right packet <- parsePacket LoggingIn <$> readPacket
+        liftIO $ print packet
 
-    let Just aes = getCipher sharedSecret
+        case packet of
+          PacketSetCompression (PacketSetCompressionPayload thresh) -> setCompressionThreshold (fromIntegral thresh)
+          _ -> pure ()
 
-    let (decryptedResponse, _) = cfb8Decrypt aes sharedSecret response
-
-    print . BS.unpack $ decryptedResponse
-    print decryptedResponse
-    print . BS.unpack $ response
+        packet <- readPacket
+        liftIO . print $ BS.unpack packet
+        liftIO . print $ packet
 
     hClose handle
     pure ()

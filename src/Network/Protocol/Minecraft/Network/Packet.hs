@@ -9,6 +9,8 @@ import GHC.Generics
 import Network.Protocol.Minecraft.Network.Types
 
 data Packet = PacketEncryptionRequest PacketEncryptionRequestPayload
+            | PacketSetCompression PacketSetCompressionPayload
+            | PacketUnknown PacketUnknownPayload
             deriving (Show)
 
 data ConnectionState = Handshaking
@@ -40,7 +42,8 @@ instance HasPacketID PacketLoginStartPayload where
     getPacketID _ = 0x00
     mode _ = LoggingIn
 
-data PacketUnknown = PacketUnknown ByteString
+data PacketUnknownPayload = PacketUnknownPayload ByteString
+    deriving (Show)
 
 instance Packable ConnectionState where
     pack = packConnectionState
@@ -73,3 +76,6 @@ instance Packable PacketEncryptionResponsePayload
 instance HasPacketID PacketEncryptionResponsePayload where
     getPacketID _ = 0x01
     mode _ = LoggingIn
+
+data PacketSetCompressionPayload = PacketSetCompressionPayload { threshold :: VarInt
+                                                               } deriving (Show)

@@ -23,7 +23,8 @@ packetParser state = varIntParser >>= payloadParser state
 payloadParser :: ConnectionState -> VarInt -> Parser Packet
 payloadParser Handshaking _ = mempty <?> "Handshaking has no clientbound packets"
 payloadParser LoggingIn 1 = PacketEncryptionRequest <$> encryptionRequestParser
-payloadParser LoggingIn x = mempty <?> "Logging in can only handle Packet 1 right now" ++ show x
+payloadParser LoggingIn 3 = PacketSetCompression . PacketSetCompressionPayload <$> varIntParser
+payloadParser LoggingIn _ = PacketUnknown . PacketUnknownPayload <$> takeByteString
 payloadParser Playing _ = _
 payloadParser GettingStatus _ = mempty <?> "NIY"
 
@@ -46,20 +47,6 @@ varIntParser = do
     initial <- takeWhile (`testBit` 7)
     last <- take 1
     pure . unpackVarInt $ initial <> last
-
-unpackVarInt :: ByteString -> VarInt
-unpackVarInt = VarInt . unpackVarVal
-
-unpackVarLong :: ByteString -> VarLong
-unpackVarLong = VarLong . unpackVarVal
-
-unpackVarVal :: (Integral a, Bits a, Num a) => ByteString -> a
-unpackVarVal bs = go $ BS.unpack bs
-    where go :: (Num a, Bits a) => [Word8] -> a
-          go [] = 0
-          go (x:xs) = if x `testBit` 7
-                         then go xs `shiftL` 7 .|. (fromIntegral x .&. 0b01111111)
-                         else fromIntegral x .&. 0b01111111
 
 word8ArrayParser :: Int -> Parser [Word8]
 word8ArrayParser = fmap BS.unpack . take
