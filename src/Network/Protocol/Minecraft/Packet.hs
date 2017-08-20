@@ -16,6 +16,7 @@ data CBPacket = PacketEncryptionRequest PacketEncryptionRequestPayload
               | PacketSetCompression PacketSetCompressionPayload
               | PacketLoginSuccess PacketLoginSuccessPayload
               | PacketUnknown PacketUnknownPayload
+              | ConnectionClosed -- Not really a packet, but... it works, okay
               deriving (Show)
 
 data SBPacket a = SBPacket a

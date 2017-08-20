@@ -108,7 +108,11 @@ encrypt plaintext = do
           pure ret
 
 readPacket :: MonadIO m => ConnectionState -> EncodedT m CBPacket
-readPacket state = Binary.runGet (getPacket state) . BSL.fromStrict <$> readPacketData
+readPacket state = do
+    closed <- connectionClosed
+    if closed
+       then pure ConnectionClosed
+       else Binary.runGet (getPacket state) . BSL.fromStrict <$> readPacketData
 
 readPacketData :: MonadIO m => EncodedT m ByteString
 readPacketData = do
@@ -122,6 +126,9 @@ readPacketData = do
     if decompressedLength > 0
        then error "Compression not implemented"
        else pure payload
+
+connectionClosed :: MonadIO m => EncodedT m Bool
+connectionClosed = gets handle >>= liftIO . hIsEOF
 
 sendPacket :: (MonadIO m, Binary p, HasPacketID p) => p -> EncodedT m ()
 sendPacket packet = do

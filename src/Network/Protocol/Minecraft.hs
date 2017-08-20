@@ -72,6 +72,7 @@ test = do
               PacketSetCompression (PacketSetCompressionPayload thresh) -> setCompressionThreshold (fromIntegral thresh)
               PacketLoginSuccess PacketLoginSuccessPayload{..} -> liftIO . putStrLn . Text.unpack $ "Login success! " <> unNetworkText successUsername
               PacketUnknown (PacketUnknownPayload bs) -> liftIO . putStrLn . show . BS.unpack $ bs
+              ConnectionClosed -> liftIO $ putStrLn "Connection closed"
               _ -> pure ()
 
     hClose handle
