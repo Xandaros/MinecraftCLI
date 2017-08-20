@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards, GeneralizedNewtypeDeriving, StandaloneDeriving #-}
-module Network.Protocol.Minecraft.Network.Encoding where --( generateSharedKey
+module Network.Protocol.Minecraft.Encoding where --( generateSharedKey
                                                    --, encryptionResponse
                                                    --, decrypt
                                                    --, getCipher
@@ -33,8 +33,8 @@ import           Data.Text (Text)
 import           Data.Word
 import           Data.X509
 import           GHC.IO.Handle
-import           Network.Protocol.Minecraft.Network.Packet
-import           Network.Protocol.Minecraft.Network.Types
+import           Network.Protocol.Minecraft.Packet
+import           Network.Protocol.Minecraft.Types
 import           Numeric
 
 data EncryptionState = EncryptionState { aes :: AES128

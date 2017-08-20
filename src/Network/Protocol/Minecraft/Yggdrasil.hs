@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric, DataKinds, TypeOperators #-}
-module Network.Protocol.Minecraft.Network.Yggdrasil ( join
-                                                    , JoinRequest(..)
-                                                    ) where
+module Network.Protocol.Minecraft.Yggdrasil ( join
+                                            , JoinRequest(..)
+                                            ) where
 
 import Data.Aeson
 import Data.Either (isRight)
@@ -12,8 +12,6 @@ import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Servant.API
 import Servant.Client
-
-import Debug.Trace
 
 --data Agent = Agent { name :: Text
 --                   , version :: Int
@@ -48,6 +46,6 @@ join req = do
     manager <- newManager tlsManagerSettings
     res <- runClientM (joinM req) $ ClientEnv manager (BaseUrl Https "sessionserver.mojang.com" 443 "")
     case res of
-      Left err -> traceShow err $ pure ()
+      Left err -> pure ()
       Right _ -> pure ()
     pure $ isRight res

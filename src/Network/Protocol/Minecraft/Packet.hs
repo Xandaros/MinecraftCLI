@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric, LambdaCase, DeriveFunctor, RecordWildCards #-}
-module Network.Protocol.Minecraft.Network.Packet where
+module Network.Protocol.Minecraft.Packet where
 
 import Data.Binary
 import Data.Binary.Get
@@ -8,7 +8,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BSL
 import Data.Int
 import GHC.Generics
-import Network.Protocol.Minecraft.Network.Types
+import Network.Protocol.Minecraft.Types
 
 import Debug.Trace
 

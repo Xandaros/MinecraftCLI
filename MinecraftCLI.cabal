@@ -16,11 +16,11 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Network.Protocol.Minecraft
-                     , Network.Protocol.Minecraft.Network
-                     , Network.Protocol.Minecraft.Network.Encoding
-                     , Network.Protocol.Minecraft.Network.Types
-                     , Network.Protocol.Minecraft.Network.Packet
-                     , Network.Protocol.Minecraft.Network.Yggdrasil
+                     , Network.Protocol.Minecraft
+                     , Network.Protocol.Minecraft.Encoding
+                     , Network.Protocol.Minecraft.Types
+                     , Network.Protocol.Minecraft.Packet
+                     , Network.Protocol.Minecraft.Yggdrasil
   build-depends:       base >= 4.7 && < 5
                      , network
                      , bytestring

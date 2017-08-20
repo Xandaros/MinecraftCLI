@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeOperators, DefaultSignatures, FlexibleContexts, TypeSynonymInstances, GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings #-}
-module Network.Protocol.Minecraft.Network.Types where
+module Network.Protocol.Minecraft.Types where
 
 import           Data.Bits
 import           Data.Binary (Binary(..))
