@@ -3,9 +3,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Protocol.Minecraft.Network where
 
-import           Control.Monad (void)
+import           Control.Monad (void, replicateM_)
 import           Control.Monad.IO.Class
 import qualified Data.ByteString as BS
+import           Data.Monoid
 import qualified Data.Text as Text
 import           GHC.IO.Handle
 import           Network.Socket hiding (send, sendTo, recv, recvFrom)
@@ -13,7 +14,7 @@ import           System.IO (IOMode(..))
 
 import Network.Protocol.Minecraft.Network.Encoding
 import Network.Protocol.Minecraft.Network.Packet
-import Network.Protocol.Minecraft.Network.Parser
+import Network.Protocol.Minecraft.Network.Types
 import Network.Protocol.Minecraft.Network.Yggdrasil
 
 test :: IO ()
@@ -40,20 +41,17 @@ test = do
 
         liftIO $ putStrLn "LoginStart sent"
 
-        response <- readPacket
+        PacketEncryptionRequest encRequest <- readPacket LoggingIn
 
         liftIO $ putStrLn "Response received"
-        let packet = parsePacket LoggingIn response
 
         liftIO $ putStrLn "decoded pubkey"
 
-        let (Right (PacketEncryptionRequest encRequest)) = packet
+        sharedSecret <- liftIO $ generateSharedKey
 
         liftIO $ putStrLn "Generating shared secret"
 
-        sharedSecret <- liftIO $ generateSharedKey
-
-        let serverHash = createServerHash (serverID encRequest) sharedSecret (pubKey encRequest)
+        let serverHash = createServerHash (unNetworkText $ serverID encRequest) sharedSecret (pubKey encRequest)
             joinRequest = JoinRequest "Your auth token" "Your UUID" (Text.pack serverHash)
 
         joinSucc <- liftIO $ join joinRequest
@@ -62,19 +60,19 @@ test = do
         Just response <- liftIO $ encryptionResponse sharedSecret encRequest
         sendPacket response
 
+        liftIO $ putStrLn "Encryption response sent"
+
         True <- enableEncryption sharedSecret
         pure ()
 
-        Right packet <- parsePacket LoggingIn <$> readPacket
-        liftIO $ print packet
+        replicateM_ 2 $ do
+            packet <- readPacket LoggingIn
 
-        case packet of
-          PacketSetCompression (PacketSetCompressionPayload thresh) -> setCompressionThreshold (fromIntegral thresh)
-          _ -> pure ()
-
-        packet <- readPacket
-        liftIO . print $ BS.unpack packet
-        liftIO . print $ packet
+            case packet of
+              PacketSetCompression (PacketSetCompressionPayload thresh) -> setCompressionThreshold (fromIntegral thresh)
+              PacketLoginSuccess PacketLoginSuccessPayload{..} -> liftIO . putStrLn . Text.unpack $ "Login success! " <> unNetworkText successUsername
+              PacketUnknown (PacketUnknownPayload bs) -> liftIO . putStrLn . show . BS.unpack $ bs
+              _ -> pure ()
 
     hClose handle
     pure ()

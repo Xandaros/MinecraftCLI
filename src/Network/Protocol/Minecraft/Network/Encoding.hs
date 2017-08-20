@@ -21,14 +21,13 @@ import           Crypto.Random (getRandomBytes)
 import           Data.ASN1.BinaryEncoding (DER(..))
 import           Data.ASN1.Encoding
 import           Data.ASN1.Types(fromASN1)
+import           Data.Binary (Binary)
+import qualified Data.Binary as Binary
+import qualified Data.Binary.Get as Binary
 import           Data.Bits
 import qualified Data.ByteString as BS
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Builder as BSB
-import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Lazy as BSL
-import           Data.Int
-import           Data.Monoid
 import qualified Data.Text.Encoding as TE
 import           Data.Text (Text)
 import           Data.Word
@@ -108,8 +107,11 @@ encrypt plaintext = do
           modify $ \s -> s{encryptionState = Just newEncState}
           pure ret
 
-readPacket :: MonadIO m => EncodedT m ByteString
-readPacket = do
+readPacket :: MonadIO m => ConnectionState -> EncodedT m CBPacket
+readPacket state = Binary.runGet (getPacket state) . BSL.fromStrict <$> readPacketData
+
+readPacketData :: MonadIO m => EncodedT m ByteString
+readPacketData = do
     handle <- gets handle
     len <- readVarInt
     compThresh <- gets compressionThreshold
@@ -121,14 +123,14 @@ readPacket = do
        then error "Compression not implemented"
        else pure payload
 
-sendPacket :: (MonadIO m, Packable p, HasPacketID p) => p -> EncodedT m ()
+sendPacket :: (MonadIO m, Binary p, HasPacketID p) => p -> EncodedT m ()
 sendPacket packet = do
     handle <- gets handle
-    let packedPacket = packPacket packet
-    liftIO $ BSB.hPutBuilder handle packedPacket
+    let packedPacket = Binary.encode (SBPacket packet)
+    liftIO $ BSL.hPut handle packedPacket
 
 readVarInt :: MonadIO m => EncodedT m VarInt
-readVarInt = fmap (unpackVarInt . BS.pack . reverse) $ go []
+readVarInt = fmap (snd . unpackVarInt . BS.pack . reverse) $ go []
     where go :: MonadIO m => [Word8] -> EncodedT m [Word8]
           go rest = do
               handle <- gets handle
@@ -193,17 +195,6 @@ createServerHash serverId' secret pubKey =
         protoHash = fst . head . readHex . show $ digest  -- FIXME
         isNegative = protoHash `testBit` 159
     in  if isNegative
-           then let hash = (2^160 - 1) `xor` (protoHash - 1)
+           then let hash = (2^(160 :: Int) - 1) `xor` (protoHash - 1)
                 in  "-" ++ showHex hash ""
            else showHex protoHash ""
-
-packPacket :: (Packable a, HasPacketID a) => a -> Builder
-packPacket packet = (pack $ (packetIDLength + payloadLength :: VarInt)) <> packetID <> payload
-    where payload = pack packet
-          payloadLength = fromIntegral $ builderLength payload
-          packetID = pack $ (getPacketID packet :: VarInt)
-          packetIDLength = fromIntegral $ builderLength packetID
-
-          builderLength :: Builder -> Int64
-          builderLength = BSL.length . BSB.toLazyByteString
-
