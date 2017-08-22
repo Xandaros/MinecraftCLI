@@ -10,11 +10,12 @@ import Data.Int
 import GHC.Generics
 import Network.Protocol.Minecraft.Types
 
-import Debug.Trace
-
 data CBPacket = PacketEncryptionRequest PacketEncryptionRequestPayload
               | PacketSetCompression PacketSetCompressionPayload
               | PacketLoginSuccess PacketLoginSuccessPayload
+              | PacketJoinGame PacketJoinGamePayload
+              | PacketKeepAlive PacketKeepAlivePayload
+              | PacketCBPlayerPositionAndLook PacketCBPlayerPositionAndLookPayload
               | PacketUnknown PacketUnknownPayload
               | ConnectionClosed -- Not really a packet, but... it works, okay
               deriving (Show)
@@ -39,13 +40,18 @@ getPacket :: ConnectionState -> Get CBPacket
 getPacket Handshaking = undefined
 getPacket LoggingIn = do
     pid <- get :: Get VarInt
-    traceShowM pid
     case pid of
       1 -> PacketEncryptionRequest <$> get
       2 -> PacketLoginSuccess <$> get
       3 -> PacketSetCompression <$> get
       _ -> PacketUnknown <$> get
-getPacket Playing = PacketUnknown <$> get
+getPacket Playing = do
+    pid <- get :: Get VarInt
+    case pid of
+      0x1F -> PacketKeepAlive <$> get
+      0x23 -> PacketJoinGame <$> get
+      0x2F -> PacketCBPlayerPositionAndLook <$> get
+      _ -> PacketUnknown <$> get
 getPacket _ = PacketUnknown <$> get
 
 data ConnectionState = Handshaking
@@ -156,3 +162,39 @@ instance HasPacketID PacketLoginSuccessPayload where
     mode _ = LoggingIn
 
 instance Binary PacketLoginSuccessPayload
+
+data PacketJoinGamePayload = PacketJoinGamePayload { player_eid :: Int32
+                                                   , joinGamemode :: Word8
+                                                   , joinDimension :: Dimension
+                                                   , joinDifficulty :: Word8
+                                                   , maxPlayers :: Word8
+                                                   , levelType :: NetworkText
+                                                   , reducedDebugInfo :: Bool
+                                                   } deriving (Show, Generic)
+instance Binary PacketJoinGamePayload
+
+data PacketKeepAlivePayload = PacketKeepAlivePayload { keepAliveId :: VarInt
+                                                     } deriving (Show, Generic)
+instance Binary PacketKeepAlivePayload
+
+instance HasPacketID PacketKeepAlivePayload where
+    getPacketID _ = 0x0B
+    mode _ = Playing
+
+data PacketCBPlayerPositionAndLookPayload = PacketCBPlayerPositionAndLookPayload { posLookCBX :: Double
+                                                                                 , posLookCBY :: Double
+                                                                                 , posLookCBZ :: Double
+                                                                                 , posLookCBYaw :: Float
+                                                                                 , posLookCBPitch :: Float
+                                                                                 , posLookCBFlags :: Word8
+                                                                                 , posLookCBID :: VarInt
+                                                                                 } deriving (Show, Generic)
+instance Binary PacketCBPlayerPositionAndLookPayload
+
+data PacketTeleportConfirmPayload = PacketTeleportConfirmPayload { teleConfirmID :: VarInt
+                                                                 } deriving (Show, Generic)
+instance Binary PacketTeleportConfirmPayload
+
+instance HasPacketID PacketTeleportConfirmPayload where
+    getPacketID _ = 0x00
+    mode _ = Playing

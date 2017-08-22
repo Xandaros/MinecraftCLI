@@ -1,10 +1,11 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, RecordWildCards #-}
 module Network.Protocol.Minecraft where
 
 import Data.Binary (Binary)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as Text
 import           Data.Text (Text)
+import Data.Word
 import Control.Monad.State
 import GHC.IO.Handle
 import qualified Network.Protocol.Minecraft.Encoding as Encoding
@@ -22,6 +23,8 @@ newtype Minecraft a = Minecraft { unMinecraft :: StateT MinecraftState (EncodedT
 
 data MinecraftState = MinecraftState { connectionState :: ConnectionState
                                      , dimension :: Dimension
+                                     , difficulty :: Word8
+                                     , gamemode :: Word8
                                      , mc_server :: HostName
                                      , mc_port :: PortNumber
                                      }
@@ -29,6 +32,8 @@ data MinecraftState = MinecraftState { connectionState :: ConnectionState
 defaultMinecraftState :: MinecraftState
 defaultMinecraftState = MinecraftState { connectionState = Handshaking
                                        , dimension = Overworld
+                                       , difficulty = 2
+                                       , gamemode = 0
                                        , mc_server = ""
                                        , mc_port = 25565
                                        }
@@ -90,16 +95,31 @@ login username uuid token = do
            encSucc <- liftMC $ enableEncryption sharedSecret
            if not encSucc
               then pure . Left $ "Unable to enable encryption"
-              else whileM $ do
-                  packet <- receivePacket
-                  case packet of
-                    PacketSetCompression (PacketSetCompressionPayload thresh) ->
-                        liftMC $ setCompressionThreshold (fromIntegral thresh) >> pure Nothing
-                    PacketLoginSuccess x -> pure . Just $ Right x
-                    _ -> pure . Just $ Left "Unexpected packet received during login"
+              else do
+                  loginSuccPacket <- whileM $ do
+                      packet <- receivePacket
+                      case packet of
+                        PacketSetCompression (PacketSetCompressionPayload thresh) ->
+                            liftMC $ setCompressionThreshold (fromIntegral thresh) >> pure Nothing
+                        PacketLoginSuccess x -> setConnectionState Playing >> pure (Just (Right x))
+                        _ -> pure . Just $ Left "Unexpected packet received during login"
+                  PacketJoinGame (PacketJoinGamePayload{..}) <- receivePacket
+                  setGamemode joinGamemode
+                  setDifficulty joinDifficulty
+                  setDimension joinDimension
+                  pure loginSuccPacket
 
 setConnectionState :: ConnectionState -> Minecraft ()
 setConnectionState c = Minecraft $ modify $ \s -> s{connectionState = c}
+
+setGamemode :: Word8 -> Minecraft ()
+setGamemode gm = Minecraft $ modify $ \s -> s{gamemode = gm}
+
+setDifficulty :: Word8 -> Minecraft ()
+setDifficulty dif = Minecraft $ modify $ \s -> s{difficulty = dif}
+
+setDimension :: Dimension -> Minecraft ()
+setDimension dim = Minecraft $ modify $ \s -> s{dimension = dim}
 
 liftMC :: EncodedT IO a -> Minecraft a
 liftMC = Minecraft . lift

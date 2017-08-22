@@ -45,7 +45,4 @@ join :: JoinRequest -> IO Bool
 join req = do
     manager <- newManager tlsManagerSettings
     res <- runClientM (joinM req) $ ClientEnv manager (BaseUrl Https "sessionserver.mojang.com" 443 "")
-    case res of
-      Left err -> pure ()
-      Right _ -> pure ()
     pure $ isRight res

@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, GeneralizedNewtypeDeriving, StandaloneDeriving #-}
+{-# LANGUAGE RecordWildCards, GeneralizedNewtypeDeriving, StandaloneDeriving, DeriveGeneric #-}
 module Network.Protocol.Minecraft.Encoding where --( generateSharedKey
                                                    --, encryptionResponse
                                                    --, decrypt
@@ -7,6 +7,7 @@ module Network.Protocol.Minecraft.Encoding where --( generateSharedKey
                                                    --, cfb8Encrypt
                                                    --) where
 
+import qualified Codec.Compression.Zlib as Zlib
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.State
@@ -24,6 +25,7 @@ import           Data.ASN1.Types(fromASN1)
 import           Data.Binary (Binary)
 import qualified Data.Binary as Binary
 import qualified Data.Binary.Get as Binary
+import qualified Data.Binary.Put as Binary
 import           Data.Bits
 import qualified Data.ByteString as BS
 import           Data.ByteString (ByteString)
@@ -33,6 +35,7 @@ import           Data.Text (Text)
 import           Data.Word
 import           Data.X509
 import           GHC.IO.Handle
+import           GHC.Generics
 import           Network.Protocol.Minecraft.Packet
 import           Network.Protocol.Minecraft.Types
 import           Numeric
@@ -107,6 +110,14 @@ encrypt plaintext = do
           modify $ \s -> s{encryptionState = Just newEncState}
           pure ret
 
+data CompressedPacket = CompressedPacket VarInt ByteString
+    deriving (Generic)
+
+instance Binary CompressedPacket where
+    get = CompressedPacket <$> Binary.get <*> (BSL.toStrict <$> Binary.getRemainingLazyByteString)
+
+    put (CompressedPacket compLen payload) = Binary.put compLen >> Binary.putByteString payload
+
 readPacket :: MonadIO m => ConnectionState -> EncodedT m CBPacket
 readPacket state = do
     closed <- connectionClosed
@@ -119,12 +130,13 @@ readPacketData = do
     handle <- gets handle
     len <- readVarInt
     compThresh <- gets compressionThreshold
-    decompressedLength <- if compThresh >= 0
-                             then readVarInt
-                             else pure 0
-    payload <- liftIO (BS.hGet handle (fromIntegral len)) >>= decrypt
+    packet <- liftIO (BS.hGet handle (fromIntegral len)) >>= decrypt
+    let (decompressedLength, payload) = if compThresh >= 0
+                                            then let (CompressedPacket decompressedLength payload) = Binary.decode (BSL.fromStrict packet)
+                                                 in  (decompressedLength, payload)
+                                            else (0, packet)
     if decompressedLength > 0
-       then error "Compression not implemented"
+       then pure . BSL.toStrict . Zlib.decompress . BSL.fromStrict $ payload
        else pure payload
 
 connectionClosed :: MonadIO m => EncodedT m Bool
