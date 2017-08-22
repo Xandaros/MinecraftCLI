@@ -17,6 +17,25 @@ import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import           Data.Word
 
+data Dimension = Overworld
+               | Nether
+               | TheEnd
+               deriving (Show, Eq, Ord)
+
+instance Enum Dimension where
+    fromEnum Overworld = 0
+    fromEnum Nether = -1
+    fromEnum TheEnd = 1
+
+    toEnum (-1) = Nether
+    toEnum 0 = Overworld
+    toEnum 1 = TheEnd
+    toEnum x = error $ "Unknown dimension " ++ show x
+
+instance Binary Dimension where
+    put = (put :: Int32 -> Put) . fromIntegral . fromEnum
+    get = (toEnum . fromIntegral) <$> (get :: Get Int32)
+
 newtype VarInt = VarInt {unVarInt :: Int32}
     deriving (Show, Bits, Eq, Ord, Num, Integral, Real, Enum)
 
