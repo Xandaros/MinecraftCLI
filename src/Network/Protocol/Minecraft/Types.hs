@@ -12,7 +12,6 @@ import           Data.Int
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid
 import           Data.String (IsString)
-import qualified Data.Text as T
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import           Data.Word
@@ -86,8 +85,9 @@ instance Binary NetworkText where
         NetworkText . TE.decodeUtf8 <$> getByteString len
 
     put (NetworkText text) = do
-        put (fromIntegral $ T.length text :: VarInt)
-        putByteString (TE.encodeUtf8 text)
+        let bs = TE.encodeUtf8 text
+        put (fromIntegral $ (BS.length bs) :: VarInt)
+        putByteString bs
 
 getWhile :: (Word8 -> Bool) -> Get ByteString
 getWhile p = fmap (fromMaybe "") . lookAheadM $ do

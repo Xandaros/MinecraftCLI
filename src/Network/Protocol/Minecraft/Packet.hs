@@ -119,10 +119,6 @@ instance Binary PacketEncryptionRequestPayload where
         verifyTokenLen <- get
         verifyToken <- getByteString (fromIntegral verifyTokenLen)
         pure $ PacketEncryptionRequestPayload serverId pubKeyLen pubKey verifyTokenLen verifyToken
-        
-instance HasPacketID PacketEncryptionRequestPayload where
-    getPacketID _ = 0x01
-    mode _ = LoggingIn
 
 data PacketEncryptionResponsePayload = PacketEncryptionResponsePayload { secretLen :: VarInt
                                                                        , secret :: ByteString
@@ -157,10 +153,6 @@ data PacketLoginSuccessPayload = PacketLoginSuccessPayload { uuid :: NetworkText
                                                            , successUsername :: NetworkText
                                                            } deriving (Show, Generic)
 
-instance HasPacketID PacketLoginSuccessPayload where
-    getPacketID _ = 0x02
-    mode _ = LoggingIn
-
 instance Binary PacketLoginSuccessPayload
 
 data PacketJoinGamePayload = PacketJoinGamePayload { player_eid :: Int32
@@ -178,7 +170,7 @@ data PacketKeepAlivePayload = PacketKeepAlivePayload { keepAliveId :: VarInt
 instance Binary PacketKeepAlivePayload
 
 instance HasPacketID PacketKeepAlivePayload where
-    getPacketID _ = 0x0B
+    getPacketID _ = 0x0C
     mode _ = Playing
 
 data PacketCBPlayerPositionAndLookPayload = PacketCBPlayerPositionAndLookPayload { posLookCBX :: Double
@@ -197,4 +189,25 @@ instance Binary PacketTeleportConfirmPayload
 
 instance HasPacketID PacketTeleportConfirmPayload where
     getPacketID _ = 0x00
+    mode _ = Playing
+
+data PacketSBChatMessagePayload = PacketSBChatMessagePayload { chatMessageSB :: NetworkText
+                                                             } deriving (Show, Generic)
+instance Binary PacketSBChatMessagePayload
+
+instance HasPacketID PacketSBChatMessagePayload where
+    getPacketID _ = 0x03
+    mode _ = Playing
+
+data PacketClientSettingsPayload = PacketClientSettingsPayload { clientSettingsLocale :: NetworkText
+                                                               , clientSettingsViewDistance :: Int8
+                                                               , clientSettingsChatMode :: VarInt
+                                                               , clientSettingsColors :: Bool
+                                                               , clientSettingsDisplayedSkinParts :: Word8
+                                                               , clientSettingsMainHand :: VarInt
+                                                               } deriving (Show, Generic)
+instance Binary PacketClientSettingsPayload
+
+instance HasPacketID PacketClientSettingsPayload where
+    getPacketID _ = 0x05
     mode _ = Playing

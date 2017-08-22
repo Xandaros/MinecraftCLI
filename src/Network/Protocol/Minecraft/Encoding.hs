@@ -30,6 +30,7 @@ import           Data.Bits
 import qualified Data.ByteString as BS
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BSL
+import           Data.Monoid ((<>))
 import qualified Data.Text.Encoding as TE
 import           Data.Text (Text)
 import           Data.Word
@@ -145,8 +146,33 @@ connectionClosed = gets handle >>= liftIO . hIsEOF
 sendPacket :: (MonadIO m, Binary p, HasPacketID p) => p -> EncodedT m ()
 sendPacket packet = do
     handle <- gets handle
-    let packedPacket = Binary.encode (SBPacket packet)
-    liftIO $ BSL.hPut handle packedPacket
+    compThresh <- gets compressionThreshold
+    let payload = Binary.runPut $ Binary.put packet
+        packetID = Binary.runPut . Binary.put $ getPacketID packet
+        compressedData = Zlib.compress $ packetID <> payload
+        payloadLength = fromIntegral $ BSL.length payload
+        dataLength = packetIDLength + payloadLength
+        dataLength' = Binary.runPut $ Binary.put dataLength
+        dataLength'length = fromIntegral $ BSL.length dataLength'
+        compressedLength = fromIntegral $ BSL.length compressedData
+        packetIDLength = fromIntegral $ BSL.length packetID
+        packedPacket = Binary.runPut $
+            if compThresh < 0
+               then do
+                   Binary.put (dataLength :: VarInt)
+                   Binary.putLazyByteString packetID
+                   Binary.putLazyByteString payload
+               else if fromIntegral dataLength < compThresh
+                   then do
+                       Binary.put (dataLength + 1 :: VarInt)
+                       Binary.put (0 :: VarInt)
+                       Binary.putLazyByteString packetID
+                       Binary.putLazyByteString payload
+                   else do
+                       Binary.put (compressedLength + dataLength'length :: VarInt)
+                       Binary.put dataLength
+                       Binary.putLazyByteString compressedData
+    encrypt (BSL.toStrict packedPacket) >>= liftIO . BS.hPut handle
 
 readVarInt :: MonadIO m => EncodedT m VarInt
 readVarInt = fmap (snd . unpackVarInt . BS.pack . reverse) $ go []
