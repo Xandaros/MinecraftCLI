@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeOperators, DefaultSignatures, FlexibleContexts, TypeSynonymInstances, GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings #-}
+{-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings, DeriveLift, LambdaCase #-}
 module Network.Protocol.Minecraft.Types where
 
 import           Data.Bits
@@ -15,6 +15,7 @@ import           Data.String (IsString)
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import           Data.Word
+import           Language.Haskell.TH.Syntax (Lift)
 
 data Dimension = Overworld
                | Nether
@@ -95,6 +96,30 @@ getWhile p = fmap (fromMaybe "") . lookAheadM $ do
     if p byte
        then (Just . (BS.pack [byte] <>)) <$> getWhile p
        else pure Nothing
+
+data ConnectionState = Handshaking
+                     | LoggingIn
+                     | Playing
+                     | GettingStatus
+                     deriving (Show, Lift)
+
+class HasPacketID f where
+    getPacketID :: f -> VarInt
+    mode :: f -> ConnectionState
+
+instance Binary ConnectionState where
+    put Handshaking   = put (0 :: VarInt)
+    put GettingStatus = put (1 :: VarInt)
+    put LoggingIn     = put (2 :: VarInt)
+    put Playing       = put (3 :: VarInt)
+
+    get = getWord8 >>= pure . \case
+                   0 -> Handshaking
+                   1 -> GettingStatus
+                   2 -> LoggingIn
+                   3 -> Playing
+                   _ -> error "Unknown state"
+
 
 -- TODO:
 -- Chat

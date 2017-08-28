@@ -16,11 +16,11 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Network.Protocol.Minecraft
-                     , Network.Protocol.Minecraft
                      , Network.Protocol.Minecraft.Encoding
                      , Network.Protocol.Minecraft.Types
                      , Network.Protocol.Minecraft.Packet
                      , Network.Protocol.Minecraft.Yggdrasil
+  other-modules:       Network.Protocol.Minecraft.Packet.TH
   build-depends:       base >= 4.7 && < 5
                      , network
                      , bytestring
@@ -38,6 +38,8 @@ library
                      , aeson
                      , binary
                      , zlib
+                     , parsec
+                     , template-haskell ==2.12.0.0
   default-language:    Haskell2010
   ghc-options:       -fdefer-typed-holes -Wall -Wno-name-shadowing
 

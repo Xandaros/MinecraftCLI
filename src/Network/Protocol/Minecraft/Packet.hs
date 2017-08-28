@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, LambdaCase, DeriveFunctor, RecordWildCards #-}
+{-# LANGUAGE DeriveGeneric, DeriveFunctor, RecordWildCards, QuasiQuotes #-}
 module Network.Protocol.Minecraft.Packet where
 
 import Data.Binary
@@ -8,17 +8,57 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BSL
 import Data.Int
 import GHC.Generics
+import Network.Protocol.Minecraft.Packet.TH
 import Network.Protocol.Minecraft.Types
 
-data CBPacket = PacketEncryptionRequest PacketEncryptionRequestPayload
-              | PacketSetCompression PacketSetCompressionPayload
-              | PacketLoginSuccess PacketLoginSuccessPayload
-              | PacketJoinGame PacketJoinGamePayload
-              | PacketKeepAlive PacketKeepAlivePayload
-              | PacketCBPlayerPositionAndLook PacketCBPlayerPositionAndLookPayload
-              | PacketUnknown PacketUnknownPayload
-              | ConnectionClosed -- Not really a packet, but... it works, okay
-              deriving (Show)
+[packetsCB|
+EncryptionRequest LoggingIn 1
+    serverID :: NetworkText
+    pubKeyLen :: VarInt
+    pubKey :: ByteString
+    verifyTokenLen :: VarInt
+    verifyToken :: ByteString
+    deriving (Generic, Show)
+    instance ()
+
+LoginSuccess LoggingIn 2
+    uuid :: NetworkText
+    successUsername :: NetworkText
+    deriving (Show, Generic)
+    instance (Binary)
+
+SetCompression LoggingIn 3
+    threshold :: VarInt
+    deriving (Show, Generic)
+    instance (Binary)
+
+JoinGame Playing 0x23
+    playerEid :: Int32
+    joinGamemode :: Word8
+    joinDimension :: Dimension
+    joinDifficulty :: Word8
+    maxPlayers :: Word8
+    levelType :: NetworkText
+    reducedDebugInfo :: Bool
+    deriving (Show, Generic)
+    instance (Binary)
+
+KeepAlive Playing 0x0C
+    keepAliveId :: VarInt
+    deriving (Show, Generic)
+    instance (Binary)
+
+PlayerPositionAndLook Playing 0x2E
+    posLookCBX :: Double
+    posLookCBY :: Double
+    posLookCBZ :: Double
+    posLookCBYaw :: Float
+    posLookCBPitch :: Float
+    posLookCBFlags :: Word8
+    posLookCBID :: VarInt
+    deriving (Show, Generic)
+    instance (Binary)
+|]
 
 data SBPacket a = SBPacket a
     deriving (Functor)
@@ -41,28 +81,18 @@ getPacket Handshaking = undefined
 getPacket LoggingIn = do
     pid <- get :: Get VarInt
     case pid of
-      1 -> PacketEncryptionRequest <$> get
-      2 -> PacketLoginSuccess <$> get
-      3 -> PacketSetCompression <$> get
-      _ -> PacketUnknown <$> get
+      1 -> CBEncryptionRequest <$> get
+      2 -> CBLoginSuccess <$> get
+      3 -> CBSetCompression <$> get
+      _ -> CBUnknown <$> get
 getPacket Playing = do
     pid <- get :: Get VarInt
     case pid of
-      0x1F -> PacketKeepAlive <$> get
-      0x23 -> PacketJoinGame <$> get
-      0x2F -> PacketCBPlayerPositionAndLook <$> get
-      _ -> PacketUnknown <$> get
-getPacket _ = PacketUnknown <$> get
-
-data ConnectionState = Handshaking
-                     | LoggingIn
-                     | Playing
-                     | GettingStatus
-                     deriving (Show)
-
-class HasPacketID f where
-    getPacketID :: f -> VarInt
-    mode :: f -> ConnectionState
+      0x1F -> CBKeepAlive <$> get
+      0x23 -> CBJoinGame <$> get
+      0x2F -> CBPlayerPositionAndLook <$> get
+      _ -> CBUnknown <$> get
+getPacket _ = CBUnknown <$> get
 
 data PacketHandshakePayload = PacketHandshakePayload { protocolVersion :: VarInt
                                                      , address :: NetworkText
@@ -83,42 +113,19 @@ instance HasPacketID PacketLoginStartPayload where
     getPacketID _ = 0x00
     mode _ = LoggingIn
 
-data PacketUnknownPayload = PacketUnknownPayload ByteString
-    deriving (Show)
-
-instance Binary PacketUnknownPayload where
-    get = PacketUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
-    put (PacketUnknownPayload a) = putByteString a
-
-instance Binary ConnectionState where
-    put Handshaking   = put (0 :: VarInt)
-    put GettingStatus = put (1 :: VarInt)
-    put LoggingIn     = put (2 :: VarInt)
-    put Playing       = put (3 :: VarInt)
-
-    get = getWord8 >>= pure . \case
-                   0 -> Handshaking
-                   1 -> GettingStatus
-                   2 -> LoggingIn
-                   3 -> Playing
-                   _ -> error "Unknown state"
+instance Binary CBUnknownPayload where
+    get = CBUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
+    put (CBUnknownPayload a) = putByteString a
 
 
-data PacketEncryptionRequestPayload = PacketEncryptionRequestPayload { serverID :: NetworkText
-                                                                     , pubKeyLen :: VarInt
-                                                                     , pubKey :: ByteString
-                                                                     , verifyTokenLen :: VarInt
-                                                                     , verifyToken :: ByteString
-                                                                     } deriving (Generic, Show)
-
-instance Binary PacketEncryptionRequestPayload where
+instance Binary CBEncryptionRequestPayload where
     get = do
         serverId <- get
         pubKeyLen <- get
         pubKey <- getByteString (fromIntegral pubKeyLen)
         verifyTokenLen <- get
         verifyToken <- getByteString (fromIntegral verifyTokenLen)
-        pure $ PacketEncryptionRequestPayload serverId pubKeyLen pubKey verifyTokenLen verifyToken
+        pure $ CBEncryptionRequestPayload serverId pubKeyLen pubKey verifyTokenLen verifyToken
 
 data PacketEncryptionResponsePayload = PacketEncryptionResponsePayload { secretLen :: VarInt
                                                                        , secret :: ByteString
@@ -144,44 +151,6 @@ instance HasPacketID PacketEncryptionResponsePayload where
     getPacketID _ = 0x01
     mode _ = LoggingIn
 
-data PacketSetCompressionPayload = PacketSetCompressionPayload { threshold :: VarInt
-                                                               } deriving (Show, Generic)
-
-instance Binary PacketSetCompressionPayload
-
-data PacketLoginSuccessPayload = PacketLoginSuccessPayload { uuid :: NetworkText
-                                                           , successUsername :: NetworkText
-                                                           } deriving (Show, Generic)
-
-instance Binary PacketLoginSuccessPayload
-
-data PacketJoinGamePayload = PacketJoinGamePayload { player_eid :: Int32
-                                                   , joinGamemode :: Word8
-                                                   , joinDimension :: Dimension
-                                                   , joinDifficulty :: Word8
-                                                   , maxPlayers :: Word8
-                                                   , levelType :: NetworkText
-                                                   , reducedDebugInfo :: Bool
-                                                   } deriving (Show, Generic)
-instance Binary PacketJoinGamePayload
-
-data PacketKeepAlivePayload = PacketKeepAlivePayload { keepAliveId :: VarInt
-                                                     } deriving (Show, Generic)
-instance Binary PacketKeepAlivePayload
-
-instance HasPacketID PacketKeepAlivePayload where
-    getPacketID _ = 0x0C
-    mode _ = Playing
-
-data PacketCBPlayerPositionAndLookPayload = PacketCBPlayerPositionAndLookPayload { posLookCBX :: Double
-                                                                                 , posLookCBY :: Double
-                                                                                 , posLookCBZ :: Double
-                                                                                 , posLookCBYaw :: Float
-                                                                                 , posLookCBPitch :: Float
-                                                                                 , posLookCBFlags :: Word8
-                                                                                 , posLookCBID :: VarInt
-                                                                                 } deriving (Show, Generic)
-instance Binary PacketCBPlayerPositionAndLookPayload
 
 data PacketTeleportConfirmPayload = PacketTeleportConfirmPayload { teleConfirmID :: VarInt
                                                                  } deriving (Show, Generic)

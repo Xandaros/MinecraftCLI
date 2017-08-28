@@ -50,11 +50,10 @@ getStates = Minecraft . gets
 getConnectionState :: Minecraft ConnectionState
 getConnectionState = Minecraft $ gets connectionState
 
-receivePacket :: Minecraft CBPacket
+receivePacket :: Minecraft (Maybe CBPacket)
 receivePacket = do
     connState <- getConnectionState
-    packet <- liftMC $ Encoding.readPacket connState
-    pure packet
+    liftMC $ Encoding.readPacket connState
 
 sendPacket :: (HasPacketID a, Binary a) => a -> Minecraft ()
 sendPacket p = liftMC $ Encoding.sendPacket p
@@ -79,10 +78,10 @@ handshake = do
     sendPacket $ PacketHandshakePayload 335 (NetworkText $ Text.pack host) (fromIntegral port) LoggingIn
     setConnectionState LoggingIn
 
-login :: Text -> Text -> Text -> Minecraft (Either String PacketLoginSuccessPayload)
+login :: Text -> Text -> Text -> Minecraft (Either String CBLoginSuccessPayload)
 login username uuid token = do
     sendPacket $ PacketLoginStartPayload (NetworkText username)
-    PacketEncryptionRequest encRequest <- receivePacket
+    Just (CBEncryptionRequest encRequest) <- receivePacket
     sharedSecret <- liftIO $ generateSharedKey
     let serverHash = createServerHash (unNetworkText $ serverID encRequest) sharedSecret (pubKey encRequest)
         joinRequest = Yggdrasil.JoinRequest token uuid (Text.pack serverHash)
@@ -97,13 +96,13 @@ login username uuid token = do
               then pure . Left $ "Unable to enable encryption"
               else do
                   loginSuccPacket <- whileM $ do
-                      packet <- receivePacket
+                      Just packet <- receivePacket
                       case packet of
-                        PacketSetCompression (PacketSetCompressionPayload thresh) ->
+                        CBSetCompression (CBSetCompressionPayload thresh) ->
                             liftMC $ setCompressionThreshold (fromIntegral thresh) >> pure Nothing
-                        PacketLoginSuccess x -> setConnectionState Playing >> pure (Just (Right x))
+                        CBLoginSuccess x -> setConnectionState Playing >> pure (Just (Right x))
                         _ -> pure . Just $ Left "Unexpected packet received during login"
-                  PacketJoinGame (PacketJoinGamePayload{..}) <- receivePacket
+                  Just (CBJoinGame (CBJoinGamePayload{..})) <- receivePacket
                   setGamemode joinGamemode
                   setDifficulty joinDifficulty
                   setDimension joinDimension

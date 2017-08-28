@@ -23,22 +23,24 @@ main = do
 
         case loginSucc of
           Left err -> liftIO $ putStrLn err
-          Right PacketLoginSuccessPayload{..} -> liftIO $ do
+          Right CBLoginSuccessPayload{..} -> liftIO $ do
               putStrLn "Logged in"
               print uuid
               print successUsername
 
         sendPacket $ PacketClientSettingsPayload "" 2 0 False 0x7F 1
-        sendPacket $ PacketSBChatMessagePayload "Test"
+        sendPacket $ PacketSBChatMessagePayload "Beep. Boop. I'm a bot"
+        sendPacket $ PacketSBChatMessagePayload "/afk"
 
         forever $ do
-            packet <- receivePacket
+            packet' <- receivePacket
 
-            case packet of
-              --PacketUnknown (PacketUnknownPayload bs) -> liftIO . putStrLn . show . BS.unpack $ bs
-              PacketKeepAlive ka -> liftIO (putStrLn "Keep alive") >> sendPacket ka >> liftIO (putStrLn "answered")
-              PacketCBPlayerPositionAndLook PacketCBPlayerPositionAndLookPayload{..} -> do
-                  liftIO $ putStrLn "Position and look"
-                  sendPacket $ PacketTeleportConfirmPayload posLookCBID
-              ConnectionClosed -> liftIO $ putStrLn "Connection closed" >> exitSuccess
-              _ -> pure ()
+            case packet' of
+              Just packet -> case packet of
+                  --PacketUnknown (PacketUnknownPayload bs) -> liftIO . putStrLn . show . BS.unpack $ bs
+                  CBKeepAlive ka -> liftIO (putStrLn "Keep alive") >> sendPacket ka >> liftIO (putStrLn "answered")
+                  CBPlayerPositionAndLook CBPlayerPositionAndLookPayload{..} -> do
+                      liftIO $ putStrLn "Position and look"
+                      sendPacket $ PacketTeleportConfirmPayload posLookCBID
+                  _ -> pure ()
+              Nothing -> liftIO $ putStrLn "Connection closed" >> exitSuccess

@@ -119,12 +119,12 @@ instance Binary CompressedPacket where
 
     put (CompressedPacket compLen payload) = Binary.put compLen >> Binary.putByteString payload
 
-readPacket :: MonadIO m => ConnectionState -> EncodedT m CBPacket
+readPacket :: MonadIO m => ConnectionState -> EncodedT m (Maybe CBPacket)
 readPacket state = do
     closed <- connectionClosed
     if closed
-       then pure ConnectionClosed
-       else Binary.runGet (getPacket state) . BSL.fromStrict <$> readPacketData
+       then pure Nothing
+       else Just . Binary.runGet (getPacket state) . BSL.fromStrict <$> readPacketData
 
 readPacketData :: MonadIO m => EncodedT m ByteString
 readPacketData = do
@@ -186,8 +186,8 @@ readVarInt = fmap (snd . unpackVarInt . BS.pack . reverse) $ go []
                  then go (fstByte : rest)
                  else pure $ fstByte : rest
 
-encryptionResponse :: ByteString -> PacketEncryptionRequestPayload -> IO (Maybe PacketEncryptionResponsePayload)
-encryptionResponse secret PacketEncryptionRequestPayload{..} = runMaybeT $ do
+encryptionResponse :: ByteString -> CBEncryptionRequestPayload -> IO (Maybe PacketEncryptionResponsePayload)
+encryptionResponse secret CBEncryptionRequestPayload{..} = runMaybeT $ do
     publicKey <- maybeZero $ decodePubKey pubKey
     encryptedSecret <- eitherAToMaybeT $ RSA.encrypt publicKey secret
     encryptedToken <- eitherAToMaybeT $ RSA.encrypt publicKey verifyToken
