@@ -28,9 +28,9 @@ main = do
               print uuid
               print successUsername
 
-        sendPacket $ PacketClientSettingsPayload "" 2 0 False 0x7F 1
-        sendPacket $ PacketSBChatMessagePayload "Beep. Boop. I'm a bot"
-        sendPacket $ PacketSBChatMessagePayload "/afk"
+        sendPacket $ SBClientSettingsPayload "" 2 0 False 0x7F 1
+        sendPacket $ SBChatMessagePayload "Beep. Boop. I'm a bot"
+        sendPacket $ SBChatMessagePayload "/afk"
 
         forever $ do
             packet' <- receivePacket
@@ -38,9 +38,15 @@ main = do
             case packet' of
               Just packet -> case packet of
                   --PacketUnknown (PacketUnknownPayload bs) -> liftIO . putStrLn . show . BS.unpack $ bs
-                  CBKeepAlive ka -> liftIO (putStrLn "Keep alive") >> sendPacket ka >> liftIO (putStrLn "answered")
+                  CBKeepAlive CBKeepAlivePayload{..} -> do
+                      liftIO (putStrLn "Keep alive")
+                      let response = SBKeepAlivePayload keepAliveId
+                      sendPacket response
+                      liftIO $ print keepAliveId
+                      liftIO $ print response
+                      liftIO (putStrLn "answered")
                   CBPlayerPositionAndLook CBPlayerPositionAndLookPayload{..} -> do
                       liftIO $ putStrLn "Position and look"
-                      sendPacket $ PacketTeleportConfirmPayload posLookCBID
+                      sendPacket $ SBTeleportConfirmPayload posLookCBID
                   _ -> pure ()
               Nothing -> liftIO $ putStrLn "Connection closed" >> exitSuccess

@@ -186,16 +186,14 @@ readVarInt = fmap (snd . unpackVarInt . BS.pack . reverse) $ go []
                  then go (fstByte : rest)
                  else pure $ fstByte : rest
 
-encryptionResponse :: ByteString -> CBEncryptionRequestPayload -> IO (Maybe PacketEncryptionResponsePayload)
+encryptionResponse :: ByteString -> CBEncryptionRequestPayload -> IO (Maybe SBEncryptionResponsePayload)
 encryptionResponse secret CBEncryptionRequestPayload{..} = runMaybeT $ do
-    publicKey <- maybeZero $ decodePubKey pubKey
+    publicKey <- maybeZero $ decodePubKey (lengthBS pubKey)
     encryptedSecret <- eitherAToMaybeT $ RSA.encrypt publicKey secret
-    encryptedToken <- eitherAToMaybeT $ RSA.encrypt publicKey verifyToken
-    pure $ PacketEncryptionResponsePayload { secretLen = 128
-                                           , secret = encryptedSecret
-                                           , responseVerifyTokenLen = 128
-                                           , responseVerifyToken = encryptedToken
-                                           }
+    encryptedToken <- eitherAToMaybeT $ RSA.encrypt publicKey (lengthBS verifyToken)
+    pure $ SBEncryptionResponsePayload { sharedSecret = LengthBS 128 encryptedSecret
+                                       , verifyToken = LengthBS 128 encryptedToken
+                                       }
 
 maybeZero :: (MonadPlus m) => Maybe a -> m a
 maybeZero = maybe mzero pure

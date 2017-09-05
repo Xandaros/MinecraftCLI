@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeOperators, DefaultSignatures, FlexibleContexts, TypeSynonymInstances, GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings, DeriveLift, LambdaCase #-}
+{-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings, DeriveLift, LambdaCase, RecordWildCards #-}
 module Network.Protocol.Minecraft.Types where
 
 import           Data.Bits
@@ -35,6 +35,16 @@ instance Enum Dimension where
 instance Binary Dimension where
     put = (put :: Int32 -> Put) . fromIntegral . fromEnum
     get = (toEnum . fromIntegral) <$> (get :: Get Int32)
+
+data LengthBS = LengthBS { lengthBSLen :: VarInt
+                         , lengthBS :: ByteString
+                         } deriving (Show)
+
+instance Binary LengthBS where
+    put LengthBS{..} = put lengthBSLen >> putByteString lengthBS
+    get = do
+        len <- get
+        LengthBS len <$> getByteString (fromIntegral len)
 
 newtype VarInt = VarInt {unVarInt :: Int32}
     deriving (Show, Bits, Eq, Ord, Num, Integral, Real, Enum)
