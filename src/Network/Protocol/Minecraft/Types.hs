@@ -53,12 +53,20 @@ newtype VarLong = VarLong {unVarLong :: Int64}
     deriving (Show, Bits, Eq, Ord, Num, Integral, Real, Enum)
 
 instance Binary VarInt where
-    put = putByteString . BS.pack . packVarVal 5
+    put = putByteString . packVarInt
 
     get = do
         initial <- getWhile (`testBit` 7)
         last <- getByteString 1
         pure . snd . unpackVarInt $ initial <> last
+
+instance Binary VarLong where
+    put = putByteString . packVarLong
+
+    get = do
+        initial <- getWhile (`testBit` 7)
+        last <- getByteString 1
+        pure . snd . unpackVarLong $ initial <> last
 
 packVarVal :: (Show a, Bits a, Integral a) => Int -> a -> [Word8]
 packVarVal _ 0 = [0]
@@ -71,6 +79,12 @@ packVarVal maxSegs' i' = go i' maxSegs'
                             else temp `setBit` 7 : go newVal (maxSegs - 1)
               where temp = fromIntegral i .&. 0b01111111 :: Word8
                     newVal = i `shiftR` 7
+
+packVarInt :: VarInt -> ByteString
+packVarInt vi = BS.pack $ packVarVal 5 (fromIntegral vi :: Word32)
+
+packVarLong :: VarLong -> ByteString
+packVarLong vl = BS.pack $ packVarVal 10 (fromIntegral vl :: Word64)
 
 unpackVarInt :: ByteString -> (ByteString, VarInt)
 unpackVarInt = fmap VarInt . unpackVarVal
