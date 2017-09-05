@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, DeriveFunctor, RecordWildCards, QuasiQuotes, DuplicateRecordFields #-}
+{-# LANGUAGE DeriveGeneric, DeriveFunctor, RecordWildCards, QuasiQuotes, TemplateHaskell, MultiParamTypeClasses, FunctionalDependencies #-}
 module Network.Protocol.Minecraft.Packet where
 
 import Data.Binary
@@ -21,7 +21,7 @@ EncryptionRequest LoggingIn 1
 
 LoginSuccess LoggingIn 2
     uuid :: NetworkText
-    successUsername :: NetworkText
+    username :: NetworkText
     deriving (Show, Generic)
     instance (Binary)
 
@@ -32,9 +32,9 @@ SetCompression LoggingIn 3
 
 JoinGame Playing 0x23
     playerEid :: Int32
-    joinGamemode :: Word8
-    joinDimension :: Dimension
-    joinDifficulty :: Word8
+    gamemode :: Word8
+    dimension :: Dimension
+    difficulty :: Word8
     maxPlayers :: Word8
     levelType :: NetworkText
     reducedDebugInfo :: Bool
@@ -47,13 +47,13 @@ KeepAlive Playing 0x1F
     instance (Binary)
 
 PlayerPositionAndLook Playing 0x2E
-    posLookCBX :: Double
-    posLookCBY :: Double
-    posLookCBZ :: Double
-    posLookCBYaw :: Float
-    posLookCBPitch :: Float
-    posLookCBFlags :: Word8
-    posLookCBID :: VarInt
+    x :: Double
+    y :: Double
+    z :: Double
+    yaw :: Float
+    pitch :: Float
+    flags :: Word8
+    posLookID :: VarInt
     deriving (Show, Generic)
     instance (Binary)
 |]
@@ -84,17 +84,17 @@ TeleportConfirm Playing 0x00
     instance (Binary)
 
 ChatMessage Playing 0x03
-    chatMessageSB :: NetworkText
+    chatMessage :: NetworkText
     deriving (Show, Generic)
     instance (Binary)
 
 ClientSettings Playing 0x05
-    clientSettingsLocale :: NetworkText
-    clientSettingsViewDistance :: Int8
-    clientSettingsChatMode :: VarInt
-    clientSettingsColors :: Bool
-    clientSettingsDisplayedSkinParts :: Word8
-    clientSettingsMainHand :: VarInt
+    locale :: NetworkText
+    viewDistance :: Int8
+    chatMode :: VarInt
+    colors :: Bool
+    displayedSkinParts :: Word8
+    mainHand :: VarInt
     deriving (Show, Generic)
     instance (Binary)
 
@@ -125,3 +125,6 @@ getPacket _ = CBUnknown <$> get
 instance Binary CBUnknownPayload where
     get = CBUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
     put (CBUnknownPayload a) = putByteString a
+
+lensify ''CBPacket
+lensify ''SBPacket

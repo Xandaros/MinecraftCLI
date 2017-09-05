@@ -1,9 +1,12 @@
 {-# LANGUAGE TemplateHaskell, RecordWildCards #-}
 module Network.Protocol.Minecraft.Packet.TH ( packetsCB
                                             , packetsSB
+                                            , lensify
                                             ) where
 
+import Control.Lens.TH
 import Control.Monad (join)
+import Data.Char (toLower, toUpper)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
@@ -119,10 +122,11 @@ declarationsQuoter prefix s = do
 
 mkConsPayload :: Bool -> String -> Declaration -> Q (Con, [Dec])
 mkConsPayload hasPacketID prefix Declaration{..} = do
-    let payloadCon Field{..} = mkVarBangType (mkName fieldName) <$> mkType (words fieldType)
-    payloadCons <- RecC (mkName $ prefix ++ declarationName ++ "Payload") <$> sequence (payloadCon <$> fields)
-    derives <- DerivClause Nothing <$> sequence (mkType . words <$> declarationDerives)
     let payloadType = mkName $ prefix ++ declarationName ++ "Payload"
+        fieldPrefix = [toLower (head prefix)] ++ drop 1 prefix ++ declarationName ++ "Payload"
+        payloadCon Field{..} = mkVarBangType (mkName $ fieldPrefix ++ [toUpper (head fieldName)] ++ drop 1 fieldName) <$> mkType (words fieldType)
+    payloadCons <- RecC payloadType <$> sequence (payloadCon <$> fields)
+    derives <- DerivClause Nothing <$> sequence (mkType . words <$> declarationDerives)
     let payload = DataD [] payloadType [] Nothing [payloadCons] [derives]
 
     instances <- sequence $ mkType . words <$> declarationInstances
@@ -139,3 +143,9 @@ mkConsPayload hasPacketID prefix Declaration{..} = do
 
     let con = NormalC (mkName $ prefix ++ declarationName) . (:[]) . mkBangType $ ConT payloadType
     pure $ (con, payload : packetIDInstance ++ instanceDecls)
+
+lensify :: Name -> DecsQ
+lensify packet' = do
+    TyConI (DataD _ _ _ _ cons _) <- reify packet'
+    let conNames = (\(NormalC _ [(_, ConT n)]) -> n) <$> cons
+    join <$> makeFields `mapM` conNames

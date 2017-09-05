@@ -1,6 +1,8 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, RecordWildCards #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, RecordWildCards, TemplateHaskell, MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies, TypeSynonymInstances, FlexibleInstances, RankNTypes #-}
 module Network.Protocol.Minecraft where
 
+import Control.Lens
 import Data.Binary (Binary)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as Text
@@ -21,21 +23,22 @@ import System.IO (IOMode(..))
 newtype Minecraft a = Minecraft { unMinecraft :: StateT MinecraftState (EncodedT IO) a
                                 } deriving (Functor, Applicative, Monad, MonadIO)
 
-data MinecraftState = MinecraftState { connectionState :: ConnectionState
-                                     , dimension :: Dimension
-                                     , difficulty :: Word8
-                                     , gamemode :: Word8
-                                     , mc_server :: HostName
-                                     , mc_port :: PortNumber
+data MinecraftState = MinecraftState { minecraftStateConnectionState :: ConnectionState
+                                     , minecraftStateDimension :: Dimension
+                                     , minecraftStateDifficulty :: Word8
+                                     , minecraftStateGamemode :: Word8
+                                     , minecraftStateMc_server :: HostName
+                                     , minecraftStateMc_port :: PortNumber
                                      }
+makeFields ''MinecraftState
 
 defaultMinecraftState :: MinecraftState
-defaultMinecraftState = MinecraftState { connectionState = Handshaking
-                                       , dimension = Overworld
-                                       , difficulty = 2
-                                       , gamemode = 0
-                                       , mc_server = ""
-                                       , mc_port = 25565
+defaultMinecraftState = MinecraftState { minecraftStateConnectionState = Handshaking
+                                       , minecraftStateDimension = Overworld
+                                       , minecraftStateDifficulty = 2
+                                       , minecraftStateGamemode = 0
+                                       , minecraftStateMc_server = ""
+                                       , minecraftStateMc_port = 25565
                                        }
 
 runMinecraft :: Handle -> MinecraftState -> Minecraft a -> IO a
@@ -44,11 +47,11 @@ runMinecraft handle state = fmap fst . runEncodedT (defaultEncodingState handle)
 getState :: Minecraft MinecraftState
 getState = Minecraft get
 
-getStates :: (MinecraftState -> a) -> Minecraft a
-getStates = Minecraft . gets
+getStates :: Lens' MinecraftState a -> Minecraft a
+getStates = Minecraft . use
 
 getConnectionState :: Minecraft ConnectionState
-getConnectionState = Minecraft $ gets connectionState
+getConnectionState = Minecraft $ use connectionState
 
 receivePacket :: Minecraft (Maybe CBPacket)
 receivePacket = do
@@ -69,7 +72,7 @@ connect host port' mc = do
            print (addrAddress $ addrs !! 0)
            Socket.connect sock (addrAddress $ addrs !! 0)
            handle <- socketToHandle sock ReadWriteMode
-           Right <$> runMinecraft handle (defaultMinecraftState{mc_server = host, mc_port = port}) mc <* hClose handle
+           Right <$> runMinecraft handle (defaultMinecraftState & mc_server .~ host & mc_port .~ port) mc <* hClose handle
 
 handshake :: Minecraft ()
 handshake = do
@@ -83,7 +86,7 @@ login username uuid token = do
     sendPacket $ SBLoginStartPayload (NetworkText username)
     Just (CBEncryptionRequest encRequest) <- receivePacket
     sharedSecret <- liftIO $ generateSharedKey
-    let serverHash = createServerHash (unNetworkText $ serverID encRequest) sharedSecret ((lengthBS . pubKey) encRequest)
+    let serverHash = createServerHash (unNetworkText $ encRequest ^. serverID) sharedSecret ((lengthBS . view pubKey) encRequest)
         joinRequest = Yggdrasil.JoinRequest token uuid (Text.pack serverHash)
     joinSucc <- liftIO $ Yggdrasil.join joinRequest
     if not joinSucc
@@ -102,23 +105,23 @@ login username uuid token = do
                             liftMC $ setCompressionThreshold (fromIntegral thresh) >> pure Nothing
                         CBLoginSuccess x -> setConnectionState Playing >> pure (Just (Right x))
                         _ -> pure . Just $ Left "Unexpected packet received during login"
-                  Just (CBJoinGame (CBJoinGamePayload{..})) <- receivePacket
-                  setGamemode joinGamemode
-                  setDifficulty joinDifficulty
-                  setDimension joinDimension
+                  Just (CBJoinGame joinGame) <- receivePacket
+                  setGamemode $ joinGame ^. gamemode
+                  setDifficulty $ joinGame ^. difficulty
+                  setDimension $ joinGame ^. dimension
                   pure loginSuccPacket
 
 setConnectionState :: ConnectionState -> Minecraft ()
-setConnectionState c = Minecraft $ modify $ \s -> s{connectionState = c}
+setConnectionState c = Minecraft $ connectionState .= c
 
 setGamemode :: Word8 -> Minecraft ()
-setGamemode gm = Minecraft $ modify $ \s -> s{gamemode = gm}
+setGamemode gm = Minecraft $ gamemode .= gm
 
 setDifficulty :: Word8 -> Minecraft ()
-setDifficulty dif = Minecraft $ modify $ \s -> s{difficulty = dif}
+setDifficulty dif = Minecraft $ difficulty .= dif
 
 setDimension :: Dimension -> Minecraft ()
-setDimension dim = Minecraft $ modify $ \s -> s{dimension = dim}
+setDimension dim = Minecraft $ dimension .= dim
 
 liftMC :: EncodedT IO a -> Minecraft a
 liftMC = Minecraft . lift

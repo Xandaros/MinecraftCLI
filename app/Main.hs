@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings #-}
 module Main where
 
+import           Control.Lens ((^.))
 import           Control.Monad (void, forever)
 import           Control.Monad.IO.Class
 import System.Exit (exitSuccess)
@@ -23,10 +24,10 @@ main = do
 
         case loginSucc of
           Left err -> liftIO $ putStrLn err
-          Right CBLoginSuccessPayload{..} -> liftIO $ do
+          Right loginSuccess -> liftIO $ do
               putStrLn "Logged in"
               print uuid
-              print successUsername
+              print $ loginSuccess ^. username
 
         sendPacket $ SBClientSettingsPayload "" 2 0 False 0x7F 1
         sendPacket $ SBChatMessagePayload "Beep. Boop. I'm a bot"
@@ -38,15 +39,13 @@ main = do
             case packet' of
               Just packet -> case packet of
                   --PacketUnknown (PacketUnknownPayload bs) -> liftIO . putStrLn . show . BS.unpack $ bs
-                  CBKeepAlive CBKeepAlivePayload{..} -> do
+                  CBKeepAlive keepAlive -> do
                       liftIO (putStrLn "Keep alive")
-                      let response = SBKeepAlivePayload keepAliveId
+                      let response = SBKeepAlivePayload $ keepAlive ^. keepAliveId
                       sendPacket response
-                      liftIO $ print keepAliveId
-                      liftIO $ print response
                       liftIO (putStrLn "answered")
-                  CBPlayerPositionAndLook CBPlayerPositionAndLookPayload{..} -> do
+                  CBPlayerPositionAndLook positionAndLook -> do
                       liftIO $ putStrLn "Position and look"
-                      sendPacket $ SBTeleportConfirmPayload posLookCBID
+                      sendPacket $ SBTeleportConfirmPayload $ positionAndLook ^. posLookID
                   _ -> pure ()
               Nothing -> liftIO $ putStrLn "Connection closed" >> exitSuccess

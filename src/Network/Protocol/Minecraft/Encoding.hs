@@ -8,6 +8,7 @@ module Network.Protocol.Minecraft.Encoding where --( generateSharedKey
                                                    --) where
 
 import qualified Codec.Compression.Zlib as Zlib
+import           Control.Lens ((^.))
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.State
@@ -172,6 +173,7 @@ sendPacket packet = do
                        Binary.put (compressedLength + dataLength'length :: VarInt)
                        Binary.put dataLength
                        Binary.putLazyByteString compressedData
+    liftIO . print $ BSL.unpack packedPacket
     encrypt (BSL.toStrict packedPacket) >>= liftIO . BS.hPut handle
 
 readVarInt :: MonadIO m => EncodedT m VarInt
@@ -187,12 +189,12 @@ readVarInt = fmap (snd . unpackVarInt . BS.pack . reverse) $ go []
                  else pure $ fstByte : rest
 
 encryptionResponse :: ByteString -> CBEncryptionRequestPayload -> IO (Maybe SBEncryptionResponsePayload)
-encryptionResponse secret CBEncryptionRequestPayload{..} = runMaybeT $ do
-    publicKey <- maybeZero $ decodePubKey (lengthBS pubKey)
+encryptionResponse secret encryptionRequest = runMaybeT $ do
+    publicKey <- maybeZero $ decodePubKey (lengthBS $ encryptionRequest ^. pubKey)
     encryptedSecret <- eitherAToMaybeT $ RSA.encrypt publicKey secret
-    encryptedToken <- eitherAToMaybeT $ RSA.encrypt publicKey (lengthBS verifyToken)
-    pure $ SBEncryptionResponsePayload { sharedSecret = LengthBS 128 encryptedSecret
-                                       , verifyToken = LengthBS 128 encryptedToken
+    encryptedToken <- eitherAToMaybeT $ RSA.encrypt publicKey (lengthBS $ encryptionRequest ^. verifyToken)
+    pure $ SBEncryptionResponsePayload { sBEncryptionResponsePayloadSharedSecret = LengthBS 128 encryptedSecret
+                                       , sBEncryptionResponsePayloadVerifyToken = LengthBS 128 encryptedToken
                                        }
 
 maybeZero :: (MonadPlus m) => Maybe a -> m a
