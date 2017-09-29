@@ -7,6 +7,7 @@ module Network.Protocol.Minecraft.Packet.TH ( packetsCB
 import Control.Lens.TH
 import Control.Monad (join)
 import Data.Char (toLower, toUpper)
+import GHC.Generics (Generic)
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
@@ -117,8 +118,25 @@ declarationsQuoter prefix s = do
                                                                       , packetID = undefined
                                                                       }
 
-    let packet = DataD [] (mkName $ prefix ++ "Packet") [] Nothing (unknownC : cons) [DerivClause Nothing [ConT ''Show]]
-    pure $ packet : join payloads ++ unknownPL
+    let packetName = mkName $ prefix ++ "Packet"
+        packet = DataD [] packetName [] Nothing (unknownC : cons) [DerivClause Nothing [ConT ''Show, ConT ''Generic]]
+    packetHasPacketID <- generateHasPacketID packetName cons payloads
+    pure $ packet : packetHasPacketID : join payloads ++ unknownPL
+
+generateHasPacketID :: Name -> [Con] -> [[Dec]] -> Q Dec
+generateHasPacketID packetName cons payloads = do
+    let passthrough name = do
+            (NormalC con _ ) <- cons
+            pure $ do
+                pat <- newName "x"
+                pure $ Clause [ConP con [VarP pat]] (NormalB $ AppE (VarE name) (VarE pat)) []
+    packetIDDecs <- sequence $ passthrough 'getPacketID
+    modeDecs <- sequence $ passthrough 'mode
+    let header = InstanceD Nothing [] (AppT (ConT ''HasPacketID) (ConT packetName))
+                   ([ FunD 'getPacketID packetIDDecs
+                    , FunD 'mode modeDecs
+                    ])
+    pure header
 
 mkConsPayload :: Bool -> String -> Declaration -> Q (Con, [Dec])
 mkConsPayload hasPacketID prefix Declaration{..} = do

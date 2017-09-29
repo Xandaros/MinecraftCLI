@@ -30,6 +30,17 @@ SetCompression LoggingIn 3
     deriving (Show, Generic)
     instance (Binary)
 
+ChatMessage Playing 0x0F
+    chatMessage :: NetworkText
+    position :: Word8
+    deriving (Show, Generic)
+    instance (Binary)
+
+DisconnectPlay Playing 0x1A
+    reason :: NetworkText
+    deriving (Show, Generic)
+    instance (Binary)
+
 JoinGame Playing 0x23
     playerEid :: Int32
     gamemode :: Word8
@@ -47,11 +58,11 @@ KeepAlive Playing 0x1F
     instance (Binary)
 
 PlayerPositionAndLook Playing 0x2E
-    x :: Double
-    y :: Double
-    z :: Double
-    yaw :: Float
-    pitch :: Float
+    x :: NetworkDouble
+    y :: NetworkDouble
+    z :: NetworkDouble
+    yaw :: NetworkFloat
+    pitch :: NetworkFloat
     flags :: Word8
     posLookID :: VarInt
     deriving (Show, Generic)
@@ -88,6 +99,11 @@ ChatMessage Playing 0x03
     deriving (Show, Generic)
     instance (Binary)
 
+ClientStatus Playing 0x04
+    actionID :: VarInt
+    deriving (Show, Generic)
+    instance (Binary)
+
 ClientSettings Playing 0x05
     locale :: NetworkText
     viewDistance :: Int8
@@ -100,6 +116,16 @@ ClientSettings Playing 0x05
 
 KeepAlive Playing 0x0C
     keepAliveId :: VarInt
+    deriving (Show, Generic)
+    instance (Binary)
+
+PlayerPositionAndLook Playing 0x0F
+    x :: NetworkDouble
+    y :: NetworkDouble
+    z :: NetworkDouble
+    yaw :: NetworkFloat
+    pitch :: NetworkFloat
+    onGround :: Bool
     deriving (Show, Generic)
     instance (Binary)
 |]
@@ -116,15 +142,23 @@ getPacket LoggingIn = do
 getPacket Playing = do
     pid <- get :: Get VarInt
     case pid of
+      0x0F -> CBChatMessage <$> get
+      0x1A -> CBDisconnectPlay <$> get
       0x1F -> CBKeepAlive <$> get
       0x23 -> CBJoinGame <$> get
-      0x2F -> CBPlayerPositionAndLook <$> get
+      0x2E -> CBPlayerPositionAndLook <$> get
       _ -> CBUnknown <$> get
 getPacket _ = CBUnknown <$> get
 
 instance Binary CBUnknownPayload where
     get = CBUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
     put (CBUnknownPayload a) = putByteString a
+
+instance Binary SBUnknownPayload where
+    get = SBUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
+    put (SBUnknownPayload a) = putByteString a
+
+instance Binary SBPacket
 
 lensify ''CBPacket
 lensify ''SBPacket

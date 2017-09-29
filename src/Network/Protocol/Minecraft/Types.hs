@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeOperators, DefaultSignatures, FlexibleContexts, TypeSynonymInstances, GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings, DeriveLift, LambdaCase, RecordWildCards #-}
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 module Network.Protocol.Minecraft.Types where
 
 import           Data.Bits
@@ -114,6 +115,20 @@ instance Binary NetworkText where
         put (fromIntegral $ (BS.length bs) :: VarInt)
         putByteString bs
 
+newtype NetworkFloat = NetworkFloat {unNetworkFloat :: Float}
+    deriving (Show, Eq, Ord, Num, Floating, Fractional, Enum, Real, RealFloat, RealFrac)
+
+instance Binary NetworkFloat where
+    get = NetworkFloat <$> getFloatbe
+    put = putFloatbe . unNetworkFloat
+
+newtype NetworkDouble = NetworkDouble {unNetworkDouble :: Double}
+    deriving (Show, Eq, Ord, Num, Floating, Fractional, Enum, Real, RealFloat, RealFrac)
+
+instance Binary NetworkDouble where
+    get = NetworkDouble <$> getDoublebe
+    put = putDoublebe . unNetworkDouble
+
 getWhile :: (Word8 -> Bool) -> Get ByteString
 getWhile p = fmap (fromMaybe "") . lookAheadM $ do
     byte <- getWord8
@@ -130,6 +145,9 @@ data ConnectionState = Handshaking
 class HasPacketID f where
     getPacketID :: f -> VarInt
     mode :: f -> ConnectionState
+
+class HasPayload f a | f -> a where
+    getPayload :: f -> a
 
 instance Binary ConnectionState where
     put Handshaking   = put (0 :: VarInt)

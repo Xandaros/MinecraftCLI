@@ -173,7 +173,6 @@ sendPacket packet = do
                        Binary.put (compressedLength + dataLength'length :: VarInt)
                        Binary.put dataLength
                        Binary.putLazyByteString compressedData
-    liftIO . print $ BSL.unpack packedPacket
     encrypt (BSL.toStrict packedPacket) >>= liftIO . BS.hPut handle
 
 readVarInt :: MonadIO m => EncodedT m VarInt
