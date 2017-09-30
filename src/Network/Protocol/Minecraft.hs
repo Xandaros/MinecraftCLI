@@ -40,6 +40,7 @@ defaultMinecraftState = MinecraftState { minecraftStateConnectionState = Handsha
                                        , minecraftStateGamemode = 0
                                        , minecraftStateMc_server = ""
                                        , minecraftStateMc_port = 25565
+                                       , minecraftStateHandle = undefined
                                        }
 
 runMinecraft :: Handle -> MinecraftState -> Minecraft a -> IO a
@@ -120,6 +121,12 @@ login username uuid token = do
                         setDifficulty $ joinGame ^. difficulty
                         setDimension $ joinGame ^. dimension
                         pure loginSuccPacket
+    where whileM :: Monad m => m (Maybe a) -> m a
+          whileM action = do
+              cont <- action
+              case cont of
+                Nothing -> whileM action
+                Just x -> pure x
 
 setConnectionState :: ConnectionState -> Minecraft ()
 setConnectionState c = Minecraft $ connectionState .= c
@@ -135,10 +142,3 @@ setDimension dim = Minecraft $ dimension .= dim
 
 liftMC :: EncodedT IO a -> Minecraft a
 liftMC = Minecraft . lift
-
-whileM :: Monad m => m (Maybe a) -> m a
-whileM action = do
-    cont <- action
-    case cont of
-      Nothing -> whileM action
-      Just x -> pure x

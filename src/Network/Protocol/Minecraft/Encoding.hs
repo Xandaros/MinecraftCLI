@@ -1,11 +1,15 @@
 {-# LANGUAGE RecordWildCards, GeneralizedNewtypeDeriving, StandaloneDeriving, DeriveGeneric #-}
-module Network.Protocol.Minecraft.Encoding where --( generateSharedKey
-                                                   --, encryptionResponse
-                                                   --, decrypt
-                                                   --, getCipher
-                                                   --, cfb8Decrypt
-                                                   --, cfb8Encrypt
-                                                   --) where
+module Network.Protocol.Minecraft.Encoding ( generateSharedKey
+                                           , encryptionResponse
+                                           , setCompressionThreshold
+                                           , enableEncryption
+                                           , createServerHash
+                                           , defaultEncodingState
+                                           , runEncodedT
+                                           , EncodedT
+                                           , sendPacket
+                                           , readPacket
+                                           ) where
 
 import qualified Codec.Compression.Zlib as Zlib
 import           Control.Lens ((^.))

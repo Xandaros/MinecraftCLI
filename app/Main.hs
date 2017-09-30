@@ -1,11 +1,12 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings, TupleSections, Arrows, ViewPatterns, QuasiQuotes, TemplateHaskell #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import           Control.Applicative (empty)
 import           Control.Concurrent.Async
 import           Control.Lens
-import           Control.Monad (void, forever, when, join)
+import           Control.Monad (void, when)
 import           Control.Monad.IO.Class
 import           Control.Concurrent.STM
 import           Data.IORef
@@ -39,8 +40,8 @@ declareFields [d|
                                    } deriving (Show)
     |]
 
-minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IO ()
-minecraftThread inbound outbound = do
+minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> IO ()
+minecraftThread inbound outbound shutdown = do
     let uuid = "Your UUID"
         token = "Your auth token"
 
@@ -62,14 +63,13 @@ minecraftThread inbound outbound = do
         sendPacket $ SBChatMessage $ SBChatMessagePayload "Beep. Boop. I'm a bot"
         -- sendPacket $ SBChatMessagePayload "/afk"
 
-        forever $ do
+        whileM (liftIO $ not <$> readIORef shutdown) $ do
             packetAvailable <- hasPacket
             when packetAvailable $ do
                 packet' <- receivePacket
 
                 case packet' of
                   Just packet -> case packet of
-                      --PacketUnknown (PacketUnknownPayload bs) -> liftIO . putStrLn . show . BS.unpack $ bs
                       CBKeepAlive keepAlive -> do
                           liftIO (putStrLn "Keep alive")
                           let response = SBKeepAlivePayload $ keepAlive ^. keepAliveId
@@ -82,7 +82,9 @@ minecraftThread inbound outbound = do
                       CBDisconnectPlay dc -> do
                           liftIO $ putStrLn $ "Disconnected: " ++ T.unpack (dc ^. reason . from network)
                       _ -> liftIO . atomically $ writeTChan inbound packet
-                  Nothing -> liftIO $ putStrLn "Connection closed" >> exitSuccess
+                  Nothing -> liftIO $ do
+                      writeIORef shutdown True
+                      putStrLn "Connection closed" >> exitSuccess
             dataToSend <- liftIO . atomically $ tryReadTChan outbound
             case dataToSend of
               Just dataToSend -> sequence_ $ sendPacket <$> dataToSend
@@ -110,11 +112,11 @@ yampaThread inbound outbound shutdown = do
             case output of
               NoEvent -> pure ()
               Event outp -> atomically $ writeTChan outbound outp
-            (quit ||) <$> readIORef shutdown
+            when quit $ void (writeIORef shutdown True)
+            readIORef shutdown
 
 mainSF :: SF (Event CBPacket) (Bool, Event [SBPacket])
 mainSF = proc inbound -> do
-    --msg <- now (SBChatMessage $ SBChatMessagePayload "Test") -< undefined
     chat <- getChatMessage -< inbound
     cmds <- commands -< chat
     quit <- quitMessage -< cmds
@@ -174,4 +176,9 @@ main = do
     inbound <- atomically $ newTChan
     outbound <- atomically $ newTChan
     shutdown <- newIORef False
-    race_ (minecraftThread inbound outbound) (yampaThread inbound outbound shutdown)
+    concurrently_ (minecraftThread inbound outbound shutdown) (yampaThread inbound outbound shutdown)
+
+whileM :: Monad f => f Bool -> f a -> f a
+whileM c x = c >>= \case
+    False -> x
+    True -> x >> whileM c x
