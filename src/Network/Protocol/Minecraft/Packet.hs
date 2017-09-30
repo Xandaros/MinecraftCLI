@@ -158,7 +158,5 @@ instance Binary SBUnknownPayload where
     get = SBUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
     put (SBUnknownPayload a) = putByteString a
 
-instance Binary SBPacket
-
 lensify ''CBPacket
 lensify ''SBPacket

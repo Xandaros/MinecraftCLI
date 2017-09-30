@@ -6,6 +6,7 @@ module Network.Protocol.Minecraft.Packet.TH ( packetsCB
 
 import Control.Lens.TH
 import Control.Monad (join)
+import Data.Binary (Binary, put)
 import Data.Char (toLower, toUpper)
 import GHC.Generics (Generic)
 import Language.Haskell.TH
@@ -120,11 +121,29 @@ declarationsQuoter prefix s = do
 
     let packetName = mkName $ prefix ++ "Packet"
         packet = DataD [] packetName [] Nothing (unknownC : cons) [DerivClause Nothing [ConT ''Show, ConT ''Generic]]
-    packetHasPacketID <- generateHasPacketID packetName cons payloads
-    pure $ packet : packetHasPacketID : join payloads ++ unknownPL
+    packetHasPacketID <- generateHasPacketID packetName cons
+    packetBinaryInstance <- packetBinary packetName cons
+    pure $ packet : packetHasPacketID : packetBinaryInstance : join payloads ++ unknownPL
 
-generateHasPacketID :: Name -> [Con] -> [[Dec]] -> Q Dec
-generateHasPacketID packetName cons payloads = do
+packetBinary :: Name -> [Con] -> Q Dec
+packetBinary packet cons = do
+    let cons' = conName <$> cons
+    putDef' <- putDef cons'
+    pure $ InstanceD Nothing [] (AppT (ConT ''Binary) (ConT packet)) [putDef']
+    where putDef :: [Name] -> Q Dec
+          putDef cons = do
+              pats <- sequenceQ $ do
+                  con <- cons
+                  pure $ do
+                      varp <- newName "a"
+                      pure $ Clause [ConP con [VarP varp]] (NormalB (AppE (VarE 'put) (VarE varp))) []
+              pure $ FunD 'put pats
+          conName :: Con -> Name
+          conName (NormalC name _) = name
+          conName _ = error "This should never happen"
+
+generateHasPacketID :: Name -> [Con] -> Q Dec
+generateHasPacketID packetName cons = do
     let passthrough name = do
             (NormalC con _ ) <- cons
             pure $ do

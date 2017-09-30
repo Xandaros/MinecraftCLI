@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
 module Network.Protocol.Minecraft.Types where
 
+import           Control.Lens.Iso (Iso', iso)
 import           Data.Bits
 import           Data.Binary (Binary(..))
 import           Data.Binary.Get
@@ -102,6 +103,9 @@ unpackVarVal bs = go $ BS.unpack bs
                               in  (rest, bit `shiftL` 7 .|. (fromIntegral x .&. 0b01111111))
                          else (BS.pack xs, fromIntegral x .&. 0b01111111)
 
+class NetworkVar src dst | src -> dst, dst -> src where
+    network :: Iso' src dst
+
 newtype NetworkText = NetworkText {unNetworkText :: Text}
     deriving (Show, Eq, Ord, IsString)
 
@@ -115,6 +119,9 @@ instance Binary NetworkText where
         put (fromIntegral $ (BS.length bs) :: VarInt)
         putByteString bs
 
+instance NetworkVar Text NetworkText where
+    network = iso NetworkText unNetworkText
+
 newtype NetworkFloat = NetworkFloat {unNetworkFloat :: Float}
     deriving (Show, Eq, Ord, Num, Floating, Fractional, Enum, Real, RealFloat, RealFrac)
 
@@ -122,12 +129,18 @@ instance Binary NetworkFloat where
     get = NetworkFloat <$> getFloatbe
     put = putFloatbe . unNetworkFloat
 
+instance NetworkVar Float NetworkFloat where
+    network = iso NetworkFloat unNetworkFloat
+
 newtype NetworkDouble = NetworkDouble {unNetworkDouble :: Double}
     deriving (Show, Eq, Ord, Num, Floating, Fractional, Enum, Real, RealFloat, RealFrac)
 
 instance Binary NetworkDouble where
     get = NetworkDouble <$> getDoublebe
     put = putDoublebe . unNetworkDouble
+
+instance NetworkVar Double NetworkDouble where
+    network = iso NetworkDouble unNetworkDouble
 
 getWhile :: (Word8 -> Bool) -> Get ByteString
 getWhile p = fmap (fromMaybe "") . lookAheadM $ do
@@ -161,7 +174,6 @@ instance Binary ConnectionState where
                    2 -> LoggingIn
                    3 -> Playing
                    _ -> error "Unknown state"
-
 
 -- TODO:
 -- Chat
