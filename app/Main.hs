@@ -24,6 +24,8 @@ import Network.Protocol.Minecraft
 import Network.Protocol.Minecraft.Packet
 import Network.Protocol.Minecraft.Types
 
+import DB
+
 import Debug.Trace
 
 botName :: String
@@ -40,18 +42,15 @@ declareFields [d|
                                    } deriving (Show)
     |]
 
-minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> IO ()
-minecraftThread inbound outbound shutdown = do
-    let uuid = "Your UUID"
-        token = "Your auth token"
-
+minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
+minecraftThread inbound outbound shutdown profile = do
     putStrLn "Connecting"
     void $ connect "minerva2gb.fluctis.com" Nothing $ do
         liftIO $ putStrLn "Sending handshake"
         handshake
         liftIO $ putStrLn "Handshake sent"
 
-        loginSucc <- login (T.pack botName) uuid token
+        loginSucc <- login (profile ^. profileUsername) (profile ^. profileUuid) (profile ^. profileToken)
 
         case loginSucc of
           Left err -> liftIO $ putStrLn err
@@ -91,10 +90,10 @@ minecraftThread inbound outbound shutdown = do
               Nothing -> pure ()
 
 
-yampaThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> IO ()
-yampaThread inbound outbound shutdown = do
+yampaThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
+yampaThread inbound outbound shutdown profile = do
     lastTime <- getCurrentTime >>= newIORef
-    reactimate initialize (senseInput lastTime) actuate mainSF
+    reactimate initialize (senseInput lastTime) actuate (mainSF profile)
     where
         initialize :: IO (Event CBPacket)
         initialize = pure NoEvent
@@ -115,10 +114,10 @@ yampaThread inbound outbound shutdown = do
             when quit $ void (writeIORef shutdown True)
             readIORef shutdown
 
-mainSF :: SF (Event CBPacket) (Bool, Event [SBPacket])
-mainSF = proc inbound -> do
+mainSF :: Profile -> SF (Event CBPacket) (Bool, Event [SBPacket])
+mainSF profile = proc inbound -> do
     chat <- getChatMessage -< inbound
-    cmds <- commands -< chat
+    cmds <- commands (profile ^. profileUsername) -< chat
     quit <- quitMessage -< cmds
     ping <- pingMessage -< cmds
     returnA -< (quit, catEvents [ping])
@@ -132,8 +131,8 @@ pingMessage = arr $ \msg -> do
     let response = SBChatMessage (SBChatMessagePayload $ (ping ^. sender ++ ": pong") ^. to T.pack . network)
     pure response
 
-commands :: SF (Event ChatMsg) (Event ChatCommand)
-commands = arr $ mapFilterE chatToCommand
+commands :: Text -> SF (Event ChatMsg) (Event ChatCommand)
+commands botName = arr $ mapFilterE (chatToCommand botName)
 
 getChatMessage :: SF (Event CBPacket) (Event ChatMsg)
 getChatMessage = arr $ \inp -> do
@@ -145,10 +144,10 @@ getChatMessage = arr $ \inp -> do
 chatToString :: Text -> Maybe String
 chatToString = fmap read . headMay . jPath ("/extra[0]/text" :: String) . T.unpack
 
-chatToCommand :: ChatMsg -> Maybe ChatCommand
-chatToCommand msg = do
+chatToCommand :: Text -> ChatMsg -> Maybe ChatCommand
+chatToCommand botName msg = do
     traceM ("Msg: " ++ show msg)
-    stripped <- stripPrefix (botName ++ ": ") (msg ^. message)
+    stripped <- stripPrefix (T.unpack botName ++ ": ") (msg ^. message)
     traceM stripped
     let split = words stripped
     cmd <- headMay split
@@ -173,10 +172,14 @@ stripParagraphs (x:xs) = x:stripParagraphs xs
 
 main :: IO ()
 main = do
+    profiles <- getActiveProfiles
+    when (null profiles) $ do
+        putStrLn "No profiles found"
+        exitSuccess
     inbound <- atomically $ newTChan
     outbound <- atomically $ newTChan
     shutdown <- newIORef False
-    concurrently_ (minecraftThread inbound outbound shutdown) (yampaThread inbound outbound shutdown)
+    concurrently_ (minecraftThread inbound outbound shutdown (head profiles)) (yampaThread inbound outbound shutdown (head profiles))
 
 whileM :: Monad f => f Bool -> f a -> f a
 whileM c x = c >>= \case
