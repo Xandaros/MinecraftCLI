@@ -3,6 +3,8 @@
 {-# LANGUAGE LambdaCase #-}
 module Main where
 
+import           Data.Aeson
+import qualified Data.ByteString.Lazy as BSL
 import           Control.Applicative (empty)
 import           Control.Concurrent.Async
 import           Control.Lens
@@ -13,6 +15,7 @@ import           Data.IORef
 import           Data.List (isPrefixOf, stripPrefix)
 import qualified Data.Text as T
 import           Data.Text (Text)
+import qualified Data.Text.Encoding as TE
 import           Data.Time (getCurrentTime, diffUTCTime, UTCTime)
 import           Safe
 import           System.Exit (exitSuccess)
@@ -138,11 +141,12 @@ getChatMessage :: SF (Event CBPacket) (Event ChatMsg)
 getChatMessage = arr $ \inp -> do
     packet <- inp
     case packet of
-      CBChatMessage msg -> maybeToEvent . fmap decodeChat . chatToString $ msg ^. chatMessage . from network
+      CBChatMessage msg -> let json = decode . BSL.fromStrict . TE.encodeUtf8 . unNetworkText $ msg ^. chatMessage :: Maybe (ChatComponent Maybe)
+                           in  traceShow json (maybeToEvent . fmap decodeChat . chatToString $ msg ^. chatMessage . from network)
       _ -> empty
 
 chatToString :: Text -> Maybe String
-chatToString = fmap read . headMay . jPath ("/extra[0]/text" :: String) . T.unpack
+chatToString = fmap read . headMay . jPath ("/extra[0]/text" :: String) . traceShowId . T.unpack
 
 chatToCommand :: Text -> ChatMsg -> Maybe ChatCommand
 chatToCommand botName msg = do

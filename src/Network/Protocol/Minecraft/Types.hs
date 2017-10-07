@@ -1,22 +1,30 @@
 {-# LANGUAGE TypeOperators, DefaultSignatures, FlexibleContexts, TypeSynonymInstances, GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings, DeriveLift, LambdaCase, RecordWildCards #-}
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, TemplateHaskell, DeriveGeneric, StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Network.Protocol.Minecraft.Types where
 
+import           Control.Applicative (empty, (<|>))
+import           Control.Lens (makeFields, (^.))
 import           Control.Lens.Iso (Iso', iso)
+import           Control.Monad.Identity
+import           Data.Aeson
 import           Data.Bits
 import           Data.Binary (Binary(..))
 import           Data.Binary.Get
 import           Data.Binary.Put
 import qualified Data.ByteString as BS
 import           Data.ByteString (ByteString)
+import qualified Data.HashMap.Lazy as HML
 import           Data.Int
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid
 import           Data.String (IsString)
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
+import qualified Data.Vector as V
 import           Data.Word
+import           GHC.Generics
 import           Language.Haskell.TH.Syntax (Lift)
 
 data Dimension = Overworld
@@ -175,8 +183,101 @@ instance Binary ConnectionState where
                    3 -> Playing
                    _ -> error "Unknown state"
 
+data ClickEvent = ClickEvent deriving (Generic, Show)
+data HoverEvent = HoverEvent deriving (Generic, Show)
+
+instance FromJSON ClickEvent
+instance FromJSON HoverEvent
+
+
+data Test f = Test (f Bool)
+
+data ChatShared f = ChatShared { chatSharedBold :: f Bool
+                               , chatSharedItalic :: f Bool
+                               , chatSharedUnderlined :: f Bool
+                               , chatSharedStrikethrough :: f Bool
+                               , chatSharedObfuscated :: f Bool
+                               , chatSharedColor :: f Text
+                               , chatSharedInsertion :: Maybe Text
+                               , chatSharedClickEvent :: ClickEvent
+                               , chatSharedHoverEvent :: HoverEvent
+                               } deriving (Generic)
+
+defaultChatShared :: ChatShared Maybe
+defaultChatShared = ChatShared Nothing Nothing Nothing Nothing Nothing Nothing Nothing ClickEvent HoverEvent
+
+baseChatShared :: ChatShared Identity
+baseChatShared = ChatShared false false false false false (Identity "white") Nothing ClickEvent HoverEvent
+    where false = Identity False
+
+deriving instance (Show (f Bool), Show (f Text)) => Show (ChatShared f)
+
+instance FromJSON (ChatShared Maybe) where
+    parseJSON (Object o) = ChatShared <$> o .:? "bold"
+                                      <*> o .:? "italic"
+                                      <*> o .:? "underlined"
+                                      <*> o .:? "strikethrough"
+                                      <*> o .:? "obfuscated"
+                                      <*> o .:? "color"
+                                      <*> o .:? "insertion"
+                                      <*> pure ClickEvent
+                                      <*> pure HoverEvent
+    parseJSON _ = empty
+
+data ChatComponent f = StringComponent { chatComponentShared :: ChatShared f
+                                       , chatComponentText :: Text
+                                       , chatComponentExtra :: [ChatComponent f]
+                                       }
+                     | TranslationComponent { chatComponentShared :: ChatShared f
+                                            , chatComponentTranslate :: Text
+                                            , chatComponentWith :: [ChatComponent f]
+                                            , chatComponentExtra :: [ChatComponent f]
+                                            }
+makeFields ''ChatShared
+makeFields ''ChatComponent
+
+deriving instance (Show (f Bool), Show (f Text)) => Show (ChatComponent f)
+
+instance FromJSON (ChatComponent Maybe) where
+    parseJSON (Object o) | "text" `HML.member` o = StringComponent <$> parseJSON (Object o)
+                                                                   <*> o .: "text"
+                                                                   <*> (o .: "extra" <|> pure [])
+                         | "translate" `HML.member` o = TranslationComponent <$> parseJSON (Object o)
+                                                                             <*> o .: "translate"
+                                                                             <*> o .: "with"
+                                                                             <*> (o .: "extra" <|> pure [])
+                         | otherwise = empty
+    parseJSON (String s) = pure $ StringComponent defaultChatShared s []
+    parseJSON (Array a) | not (V.null a) = do
+        first <- parseJSON (V.head a)
+        rest <- sequence . V.toList $ parseJSON <$> V.drop 1 a
+        pure $ StringComponent defaultChatShared first rest
+    parseJSON _ = empty
+
+inheritStyle :: ChatShared Identity -> ChatShared Maybe -> ChatShared Identity
+inheritStyle base cc = ChatShared (Identity $ fromMaybe (runIdentity $ base ^. bold) (cc ^. bold))
+                                  (Identity $ fromMaybe (runIdentity $ base ^. italic) (cc ^. italic))
+                                  (Identity $ fromMaybe (runIdentity $ base ^. underlined) (cc ^. underlined))
+                                  (Identity $ fromMaybe (runIdentity $ base ^. strikethrough) (cc ^. strikethrough))
+                                  (Identity $ fromMaybe (runIdentity $ base ^. obfuscated) (cc ^. obfuscated))
+                                  (Identity $ fromMaybe (runIdentity $ base ^. color) (cc ^. color))
+                                  (cc ^. insertion)
+                                  ClickEvent
+                                  HoverEvent
+
+inheritChatComponent :: ChatShared Identity -> ChatComponent Maybe -> ChatComponent Identity
+inheritChatComponent base cc = case cc of
+                                 StringComponent{} -> StringComponent canonicalStyle (cc ^. text) extras
+                                 TranslationComponent{} -> let withs = inheritChatComponent canonicalStyle <$> cc ^. with
+                                                           in  TranslationComponent canonicalStyle (cc ^. translate) withs extras
+    where canonicalStyle = inheritStyle base (cc ^. shared)
+          extras = inheritChatComponent canonicalStyle <$> cc ^. extra
+
+canonicalizeChatComponent :: ChatComponent Maybe -> ChatComponent Identity
+canonicalizeChatComponent = inheritChatComponent baseChatShared
+
+
 -- TODO:
--- Chat
 -- Entity Metadata
 -- Slot
 -- NBT Tag
