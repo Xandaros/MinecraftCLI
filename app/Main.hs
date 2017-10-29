@@ -5,6 +5,7 @@ module Main where
 
 import           Data.Aeson
 import qualified Data.ByteString.Lazy as BSL
+import           Data.Monoid ((<>))
 import           Control.Applicative (empty)
 import           Control.Concurrent.Async
 import           Control.Lens
@@ -35,20 +36,20 @@ botName :: String
 botName = "Yotanido"
 
 declareFields [d|
-    data ChatMsg = ChatMsg { chatMsgSender :: String
-                           , chatMsgMessage :: String
+    data ChatMsg = ChatMsg { chatMsgSender :: Text
+                           , chatMsgMessage :: Text
                            } deriving (Show)
 
-    data ChatCommand = ChatCommand { chatCommandSender :: String
-                                   , chatCommandCommand :: String
-                                   , chatCommandArguments :: [String]
+    data ChatCommand = ChatCommand { chatCommandSender :: Text
+                                   , chatCommandCommand :: Text
+                                   , chatCommandArguments :: [Text]
                                    } deriving (Show)
     |]
 
 minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
 minecraftThread inbound outbound shutdown profile = do
     putStrLn "Connecting"
-    void $ connect "minerva2gb.fluctis.com" Nothing $ do
+    void $ connect "158.69.23.101" Nothing $ do
         liftIO $ putStrLn "Sending handshake"
         handshake
         liftIO $ putStrLn "Handshake sent"
@@ -131,7 +132,7 @@ quitMessage = arr $ isEvent . filterE ((=="quit") . view command)
 pingMessage :: SF (Event ChatCommand) (Event SBPacket)
 pingMessage = arr $ \msg -> do
     ping <- filterE ((=="ping") . view command) msg
-    let response = SBChatMessage (SBChatMessagePayload $ (ping ^. sender ++ ": pong") ^. to T.pack . network)
+    let response = SBChatMessage (SBChatMessagePayload $ (ping ^. sender <> ": pong") ^. network)
     pure response
 
 commands :: Text -> SF (Event ChatMsg) (Event ChatCommand)
@@ -146,16 +147,14 @@ getChatMessage = arr $ \inp -> do
       _ -> empty
 
 chatToString :: Text -> Maybe String
-chatToString = fmap read . headMay . jPath ("/extra[0]/text" :: String) . traceShowId . T.unpack
+chatToString c = T.unpack . chatToText . canonicalizeChatComponent <$> decode (BSL.fromStrict $ TE.encodeUtf8 c)
 
 chatToCommand :: Text -> ChatMsg -> Maybe ChatCommand
 chatToCommand botName msg = do
     traceM ("Msg: " ++ show msg)
-    stripped <- stripPrefix (T.unpack botName ++ ": ") (msg ^. message)
-    traceM stripped
-    let split = words stripped
+    stripped <- T.stripPrefix (botName <> ": ") (msg ^. message)
+    let split = T.words stripped
     cmd <- headMay split
-    traceM cmd
     let args = tailSafe split
     pure . traceShowId $ ChatCommand (msg ^. sender) cmd args
 
@@ -167,11 +166,11 @@ decodeChat (stripParagraphs -> s) =
         message = if "<" `isPrefixOf` s
                      then drop 2 . dropWhile (/='>') $ s
                      else s
-    in ChatMsg sender message
+    in  ChatMsg (T.pack sender) (T.pack message)
 
 stripParagraphs :: String -> String
 stripParagraphs [] = []
-stripParagraphs ('§':_:xs) = xs
+stripParagraphs ('§':_:xs) = stripParagraphs xs
 stripParagraphs (x:xs) = x:stripParagraphs xs
 
 main :: IO ()

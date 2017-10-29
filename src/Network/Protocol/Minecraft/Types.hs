@@ -276,6 +276,16 @@ inheritChatComponent base cc = case cc of
 canonicalizeChatComponent :: ChatComponent Maybe -> ChatComponent Identity
 canonicalizeChatComponent = inheritChatComponent baseChatShared
 
+chatToText :: ChatComponent Identity -> Text
+chatToText (TranslationComponent _ key withs extra) = case key of
+                                                        "chat.type.text" -> "<" <> chatToText (withs !! 0) <> "> "
+                                                                         <> chatToText (withs !! 1) <> extras
+                                                        "commands.message.display.incoming" -> chatToText (withs !! 0) <> " whispers to you: "
+                                                                                            <> chatToText (withs !! 1) <> extras
+                                                        _ -> key <> extras
+    where extras = mconcat (chatToText <$> extra)
+chatToText (StringComponent _ t extra) = t <> mconcat (chatToText <$> extra)
+
 
 -- TODO:
 -- Entity Metadata
