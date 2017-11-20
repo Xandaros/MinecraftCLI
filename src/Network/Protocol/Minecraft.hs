@@ -20,8 +20,13 @@ import qualified Network.Protocol.Minecraft.Yggdrasil as Yggdrasil
 import Network.Socket as Socket
 import System.IO (IOMode(..), hReady)
 
-newtype Minecraft a = Minecraft { unMinecraft :: StateT MinecraftState (EncodedT IO) a
-                                } deriving (Functor, Applicative, Monad, MonadIO)
+newtype MinecraftT m a = MinecraftT { unMinecraftT :: StateT MinecraftState (EncodedT m) a
+                                    } deriving (Functor, Applicative, Monad, MonadIO)
+
+instance MonadTrans MinecraftT where
+    lift = MinecraftT . lift . lift
+
+type Minecraft = MinecraftT IO
 
 data MinecraftState = MinecraftState { minecraftStateConnectionState :: ConnectionState
                                      , minecraftStateDimension :: Dimension
@@ -43,52 +48,56 @@ defaultMinecraftState = MinecraftState { minecraftStateConnectionState = Handsha
                                        , minecraftStateHandle = undefined
                                        }
 
+runMinecraftT :: Monad m => Handle -> MinecraftState -> MinecraftT m a -> m a
+runMinecraftT handle state = fmap fst . runEncodedT (defaultEncodingState handle) . flip evalStateT state . unMinecraftT
+
 runMinecraft :: Handle -> MinecraftState -> Minecraft a -> IO a
-runMinecraft handle state = fmap fst . runEncodedT (defaultEncodingState handle) . flip evalStateT state . unMinecraft
+runMinecraft = runMinecraftT
 
-getState :: Minecraft MinecraftState
-getState = Minecraft get
+getState :: Monad m => MinecraftT m MinecraftState
+getState = MinecraftT get
 
-getStates :: Lens' MinecraftState a -> Minecraft a
-getStates = Minecraft . use
+getStates :: Monad m => Lens' MinecraftState a -> MinecraftT m a
+getStates = MinecraftT . use
 
-getConnectionState :: Minecraft ConnectionState
-getConnectionState = Minecraft $ use connectionState
+getConnectionState :: Monad m => MinecraftT m ConnectionState
+getConnectionState = MinecraftT $ use connectionState
 
-receivePacket :: Minecraft (Maybe CBPacket)
+receivePacket :: (Monad m, MonadIO m) => MinecraftT m (Maybe CBPacket)
 receivePacket = do
     connState <- getConnectionState
     liftMC $ Encoding.readPacket connState
 
-hasPacket :: Minecraft Bool
+hasPacket :: (Monad m, MonadIO m) => MinecraftT m Bool
 hasPacket = do
     hdl <- getStates handle
     liftIO $ hReady hdl
 
-sendPacket :: (HasPacketID a, Binary a) => a -> Minecraft ()
+sendPacket :: (HasPacketID a, Binary a, Monad m, MonadIO m) => a -> MinecraftT m ()
 sendPacket p = liftMC $ Encoding.sendPacket p
 
-connect :: HostName -> Maybe PortNumber -> Minecraft a -> IO (Either String a)
+connect :: (Monad m, MonadIO m) => HostName -> Maybe PortNumber -> MinecraftT m a -> m (Either String a)
 connect host port' mc = do
     let port = fromMaybe 25565 port'
-    addrs <- getAddrInfo Nothing (Just host) (Just $ show port)
+    addrs <- liftIO $ getAddrInfo Nothing (Just host) (Just $ show port)
     if null addrs
        then pure . Left $ "Unable to find host " ++ host
        else do
-           sock <- socket AF_INET Stream defaultProtocol
-           print (addrAddress $ addrs !! 0)
-           Socket.connect sock (addrAddress $ addrs !! 0)
-           hdl <- socketToHandle sock ReadWriteMode
-           Right <$> runMinecraft hdl (defaultMinecraftState & mc_server .~ host & mc_port .~ port & handle .~ hdl) mc <* hClose hdl
+           sock <- liftIO $ socket AF_INET Stream defaultProtocol
+           liftIO $ print (addrAddress $ addrs !! 0)
+           liftIO $ Socket.connect sock (addrAddress $ addrs !! 0)
+           hdl <- liftIO $ socketToHandle sock ReadWriteMode
+           Right <$> runMinecraftT hdl (defaultMinecraftState & mc_server .~ host & mc_port .~ port & handle .~ hdl) mc
+                  <* liftIO (hClose hdl)
 
-handshake :: Minecraft ()
+handshake :: (Monad m, MonadIO m) => MinecraftT m ()
 handshake = do
     host <- getStates mc_server
     port <- getStates mc_port
     sendPacket $ SBHandshakePayload 335 (NetworkText $ Text.pack host) (fromIntegral port) LoggingIn
     setConnectionState LoggingIn
 
-login :: Text -> Text -> Text -> Minecraft (Either String CBLoginSuccessPayload)
+login :: (Monad m, MonadIO m) => Text -> Text -> Text -> MinecraftT m (Either String CBLoginSuccessPayload)
 login username uuid token = do
     sendPacket $ SBLoginStartPayload (NetworkText username)
     p <- receivePacket
@@ -128,17 +137,17 @@ login username uuid token = do
                 Nothing -> whileM action
                 Just x -> pure x
 
-setConnectionState :: ConnectionState -> Minecraft ()
-setConnectionState c = Minecraft $ connectionState .= c
+setConnectionState :: Monad m => ConnectionState -> MinecraftT m ()
+setConnectionState c = MinecraftT $ connectionState .= c
 
-setGamemode :: Word8 -> Minecraft ()
-setGamemode gm = Minecraft $ gamemode .= gm
+setGamemode :: Monad m => Word8 -> MinecraftT m ()
+setGamemode gm = MinecraftT $ gamemode .= gm
 
-setDifficulty :: Word8 -> Minecraft ()
-setDifficulty dif = Minecraft $ difficulty .= dif
+setDifficulty :: Monad m => Word8 -> MinecraftT m ()
+setDifficulty dif = MinecraftT $ difficulty .= dif
 
-setDimension :: Dimension -> Minecraft ()
-setDimension dim = Minecraft $ dimension .= dim
+setDimension :: Monad m => Dimension -> MinecraftT m ()
+setDimension dim = MinecraftT $ dimension .= dim
 
-liftMC :: EncodedT IO a -> Minecraft a
-liftMC = Minecraft . lift
+liftMC :: Monad m => EncodedT m a -> MinecraftT m a
+liftMC = MinecraftT . lift

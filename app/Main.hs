@@ -6,23 +6,22 @@ module Main where
 import           Data.Aeson
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Monoid ((<>))
-import           Control.Applicative (empty)
+import           Control.Concurrent (threadDelay, forkIO)
 import           Control.Concurrent.Async
-import           Control.Lens
-import           Control.Monad (void, when)
-import           Control.Monad.IO.Class
 import           Control.Concurrent.STM
+import           Control.Lens
+import           Control.Monad (void, when, forever)
+import           Control.Monad.IO.Class
 import           Data.IORef
-import           Data.List (isPrefixOf, stripPrefix)
+import           Data.List (isPrefixOf)
 import qualified Data.Text as T
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
-import           Data.Time (getCurrentTime, diffUTCTime, UTCTime)
+import qualified Data.Text.IO as TIO
 import           Safe
 import           System.Exit (exitSuccess)
-import           Text.JSON.JPath
-import           FRP.Yampa
-import           FRP.Yampa.Event
+import           Reflex hiding (performEvent_)
+import           Reflex.Host.App
 
 import Network.Protocol.Minecraft
 import Network.Protocol.Minecraft.Packet
@@ -49,6 +48,7 @@ declareFields [d|
 minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
 minecraftThread inbound outbound shutdown profile = do
     putStrLn "Connecting"
+
     void $ connect "158.69.23.101" Nothing $ do
         liftIO $ putStrLn "Sending handshake"
         handshake
@@ -94,57 +94,28 @@ minecraftThread inbound outbound shutdown profile = do
               Nothing -> pure ()
 
 
-yampaThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
-yampaThread inbound outbound shutdown profile = do
-    lastTime <- getCurrentTime >>= newIORef
-    reactimate initialize (senseInput lastTime) actuate (mainSF profile)
-    where
-        initialize :: IO (Event CBPacket)
-        initialize = pure NoEvent
-        senseInput :: IORef UTCTime -> Bool -> IO (DTime, Maybe (Event CBPacket))
-        senseInput lastTime _ = do
-            curTime <- getCurrentTime
-            diffTime <- realToFrac . diffUTCTime curTime <$> readIORef lastTime
-            writeIORef lastTime curTime
-            inPacket <- atomically $ tryReadTChan inbound
-            case inPacket of
-              Nothing -> pure (diffTime, Just NoEvent)
-              Just packet -> pure (diffTime, Just (Event packet))
-        actuate :: Bool -> (Bool, Event [SBPacket]) -> IO Bool
-        actuate _ (quit, output) = do
-            case output of
-              NoEvent -> pure ()
-              Event outp -> atomically $ writeTChan outbound outp
-            when quit $ void (writeIORef shutdown True)
-            readIORef shutdown
+frpThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
+frpThread inbound outbound shutdown profile = runSpiderHost $ hostApp app
+    where app :: MonadAppHost t m => m ()
+          app = do
+              (inputEvent, inputFire) <- newExternalEvent
+              (tickEvent, tickFire) <- newExternalEvent
+              void . liftIO . forkIO . forever $ threadDelay (floor (1/20 * 1000000 :: Double)) >>= tickFire
+              void . liftIO . forkIO . forever $ atomically (readTChan inbound) >>= inputFire
+              (outEvent, printEvent) <- minecraftBot inputEvent tickEvent
+              performEvent_ $ fmap (liftIO . atomically . writeTChan outbound) outEvent
+              performEvent_ $ fmap (liftIO . TIO.putStrLn) printEvent
+              pure ()
 
-mainSF :: Profile -> SF (Event CBPacket) (Bool, Event [SBPacket])
-mainSF profile = proc inbound -> do
-    chat <- getChatMessage -< inbound
-    cmds <- commands (profile ^. profileUsername) -< chat
-    quit <- quitMessage -< cmds
-    ping <- pingMessage -< cmds
-    returnA -< (quit, catEvents [ping])
 
-quitMessage :: SF (Event ChatCommand) Bool
-quitMessage = arr $ isEvent . filterE ((=="quit") . view command)
+minecraftBot :: (Monad m, Reflex t) => Event t CBPacket -> Event t () -> m (Event t [SBPacket], Event t Text)
+minecraftBot inbound tick = pure (never, chatMessageE inbound)
 
-pingMessage :: SF (Event ChatCommand) (Event SBPacket)
-pingMessage = arr $ \msg -> do
-    ping <- filterE ((=="ping") . view command) msg
-    let response = SBChatMessage (SBChatMessagePayload $ (ping ^. sender <> ": pong") ^. network)
-    pure response
+chatMessageE :: Reflex t => Event t CBPacket -> Event t Text
+chatMessageE inbound = (flip fmapMaybe) inbound $ \case
+    CBChatMessage (CBChatMessagePayload text _) -> Just $ text ^. from network
+    _ -> Nothing
 
-commands :: Text -> SF (Event ChatMsg) (Event ChatCommand)
-commands botName = arr $ mapFilterE (chatToCommand botName)
-
-getChatMessage :: SF (Event CBPacket) (Event ChatMsg)
-getChatMessage = arr $ \inp -> do
-    packet <- inp
-    case packet of
-      CBChatMessage msg -> let json = decode . BSL.fromStrict . TE.encodeUtf8 . unNetworkText $ msg ^. chatMessage :: Maybe (ChatComponent Maybe)
-                           in  traceShow json (maybeToEvent . fmap decodeChat . chatToString $ msg ^. chatMessage . from network)
-      _ -> empty
 
 chatToString :: Text -> Maybe String
 chatToString c = T.unpack . chatToText . canonicalizeChatComponent <$> decode (BSL.fromStrict $ TE.encodeUtf8 c)
@@ -182,7 +153,7 @@ main = do
     inbound <- atomically $ newTChan
     outbound <- atomically $ newTChan
     shutdown <- newIORef False
-    concurrently_ (minecraftThread inbound outbound shutdown (head profiles)) (yampaThread inbound outbound shutdown (head profiles))
+    concurrently_ (minecraftThread inbound outbound shutdown (head profiles)) (frpThread inbound outbound shutdown (head profiles))
 
 whileM :: Monad f => f Bool -> f a -> f a
 whileM c x = c >>= \case
