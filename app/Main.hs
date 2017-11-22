@@ -5,6 +5,8 @@ module Main where
 
 import           Data.Aeson
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.List.NonEmpty as NE
+import           Data.List.NonEmpty (NonEmpty)
 import           Data.Monoid ((<>))
 import           Control.Concurrent (threadDelay, forkIO)
 import           Control.Concurrent.Async
@@ -92,30 +94,52 @@ minecraftThread inbound outbound shutdown profile = do
             case dataToSend of
               Just dataToSend -> sequence_ $ sendPacket <$> dataToSend
               Nothing -> pure ()
+            packetAvailable <- hasPacket
+            liftIO $ when (not packetAvailable) $ do
+                threadDelay (floor ((1/30) :: Double))
 
 
 frpThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
-frpThread inbound outbound shutdown profile = runSpiderHost $ hostApp app
+frpThread inbound outbound shutdown _profile = runSpiderHost $ hostApp app
     where app :: MonadAppHost t m => m ()
           app = do
               (inputEvent, inputFire) <- newExternalEvent
               (tickEvent, tickFire) <- newExternalEvent
               void . liftIO . forkIO . forever $ threadDelay (floor (1/20 * 1000000 :: Double)) >>= tickFire
               void . liftIO . forkIO . forever $ atomically (readTChan inbound) >>= inputFire
-              (outEvent, printEvent) <- minecraftBot inputEvent tickEvent
-              performEvent_ $ fmap (liftIO . atomically . writeTChan outbound) outEvent
-              performEvent_ $ fmap (liftIO . TIO.putStrLn) printEvent
+              (outEvent, printEvent, shutdownEvent) <- minecraftBot inputEvent tickEvent
+              performEvent_ $ fmap (liftIO . atomically . writeTChan outbound . NE.toList) outEvent
+              performEvent_ $ fmap (sequence_ . fmap liftIO . fmap TIO.putStrLn . NE.toList) printEvent
+              performEvent_ $ fmap (const . liftIO $ threadDelay 1000000 >> writeIORef shutdown True >> exitSuccess) shutdownEvent
               pure ()
 
 
-minecraftBot :: (Monad m, Reflex t) => Event t CBPacket -> Event t () -> m (Event t [SBPacket], Event t Text)
-minecraftBot inbound tick = pure (never, chatMessageE inbound)
+minecraftBot :: (Monad m, Reflex t) => Event t CBPacket -> Event t () -> m (Event t (NonEmpty SBPacket), Event t (NonEmpty Text), Event t ())
+minecraftBot inbound _tick = do
+    let chatMessages = chatMessageE inbound
+        commands = commandE chatMessages
+    pure ( mergeList [ pingCommandE commands
+                     , quitCommandE commands
+                     ]
+         , mergeList [ T.pack . show <$> chatMessages
+                     , T.pack . show <$> commands
+                     ]
+         , void $ quitCommandE commands
+         )
 
-chatMessageE :: Reflex t => Event t CBPacket -> Event t Text
-chatMessageE inbound = (flip fmapMaybe) inbound $ \case
-    CBChatMessage (CBChatMessagePayload text _) -> Just $ text ^. from network
+pingCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
+pingCommandE = (fmap . const) (SBChatMessage (SBChatMessagePayload "Pong!")) . ffilter ((=="ping") . view command)
+
+quitCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
+quitCommandE = (fmap . const) (SBChatMessage (SBChatMessagePayload "Bye :'(")) . ffilter ((=="quit") . view command)
+
+chatMessageE :: Reflex t => Event t CBPacket -> Event t ChatMsg
+chatMessageE inbound = fforMaybe inbound $ \case
+    CBChatMessage (CBChatMessagePayload text _) -> fmap decodeChat . chatToString $ text ^. from network
     _ -> Nothing
 
+commandE :: Reflex t => Event t ChatMsg -> Event t ChatCommand
+commandE = fmapMaybe (chatToCommand (T.pack botName))
 
 chatToString :: Text -> Maybe String
 chatToString c = T.unpack . chatToText . canonicalizeChatComponent <$> decode (BSL.fromStrict $ TE.encodeUtf8 c)
