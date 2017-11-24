@@ -94,9 +94,8 @@ minecraftThread inbound outbound shutdown profile = do
             case dataToSend of
               Just dataToSend -> sequence_ $ sendPacket <$> dataToSend
               Nothing -> pure ()
-            packetAvailable <- hasPacket
             liftIO $ when (not packetAvailable) $ do
-                threadDelay (floor ((1/30) :: Double))
+                threadDelay (floor $ ((1/21) :: Double) * 1000000)
 
 
 frpThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
@@ -125,7 +124,7 @@ minecraftBot inbound tick = do
                      , quitCommandE commands
                      , whereAreYouCommandE commands playerPos
                      , tpCommandE commands
-                     , SBChatMessage (SBChatMessagePayload "Test") <$ ffilter ((==0) . (`mod` 10)) seconds
+                     -- , SBChatMessage (SBChatMessagePayload "Test") <$ ffilter ((==0) . (`mod` 10)) seconds
                      ]
          , mergeList [ T.pack . show <$> chatMessages
                      , T.pack . show <$> commands
@@ -209,7 +208,7 @@ main = do
     shutdown <- newIORef False
     concurrently_ (minecraftThread inbound outbound shutdown (head profiles)) (frpThread inbound outbound shutdown (head profiles))
 
-whileM :: Monad f => f Bool -> f a -> f a
+whileM :: Monad f => f Bool -> f () -> f ()
 whileM c x = c >>= \case
-    False -> x
+    False -> pure ()
     True -> x >> whileM c x

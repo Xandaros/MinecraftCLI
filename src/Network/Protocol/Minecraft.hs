@@ -69,9 +69,7 @@ receivePacket = do
     liftMC $ Encoding.readPacket connState
 
 hasPacket :: (Monad m, MonadIO m) => MinecraftT m Bool
-hasPacket = do
-    hdl <- getStates handle
-    liftIO $ hReady hdl
+hasPacket = getStates handle >>= liftIO . hReady
 
 sendPacket :: (HasPacketID a, Binary a, Monad m, MonadIO m) => a -> MinecraftT m ()
 sendPacket p = liftMC $ Encoding.sendPacket p

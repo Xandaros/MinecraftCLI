@@ -20,7 +20,12 @@ library
                      , Network.Protocol.Minecraft.Types
                      , Network.Protocol.Minecraft.Packet
                      , Network.Protocol.Minecraft.Yggdrasil
+                     , Foreign.Crypt
   other-modules:       Network.Protocol.Minecraft.Packet.TH
+  c-sources:           cbits/crypt.c
+  extra-libraries:     mcrypt
+  include-dirs:        cbits
+  includes:            cbits/crypt.h
   build-depends:       base >= 4.7 && < 5
                      , network
                      , bytestring

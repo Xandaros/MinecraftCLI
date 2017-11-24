@@ -40,6 +40,7 @@ import qualified Data.Text.Encoding as TE
 import           Data.Text (Text)
 import           Data.Word
 import           Data.X509
+import qualified Foreign.Crypt as Crypt
 import           GHC.IO.Handle
 import           GHC.Generics
 import           Network.Protocol.Minecraft.Packet
@@ -48,7 +49,7 @@ import           Numeric
 
 data EncryptionState = EncryptionState { aes :: AES128
                                        , encryptSR :: ByteString
-                                       , decryptSR :: ByteString
+                                       , decryptSR :: Crypt.Cipher
                                        }
 
 data EncodingState = EncodingState { encryptionState :: Maybe EncryptionState
@@ -79,28 +80,26 @@ getCipher secret = do
 defaultEncodingState :: Handle -> EncodingState
 defaultEncodingState handle = EncodingState Nothing (-1) handle
 
-enableEncryption :: Monad m => ByteString -> EncodedT m Bool
+enableEncryption :: MonadIO m => ByteString -> EncodedT m Bool
 enableEncryption secret = do
     case getCipher secret of
         Nothing -> pure False
         Just cipher -> do
-            modify (\s -> s{encryptionState = Just $ EncryptionState cipher secret secret})
+            decryptor <- liftIO $ Crypt.newCipher secret secret
+            modify (\s -> s{encryptionState = Just $ EncryptionState cipher secret decryptor})
             pure True
 
 setCompressionThreshold :: Monad m => Int -> EncodedT m ()
 setCompressionThreshold threshold = modify (\s -> s{compressionThreshold = threshold})
 
-decrypt :: Monad m => ByteString -> EncodedT m ByteString
+decrypt :: MonadIO m => ByteString -> EncodedT m ByteString
 decrypt ciphertext = do
     encState' <- gets encryptionState
     case encState' of
       Nothing -> pure ciphertext
       Just encState -> do
           let sr = decryptSR encState
-              cipher = aes encState
-              (ret, newSR) = cfb8Decrypt cipher sr ciphertext
-              newEncState = encState{decryptSR = newSR}
-          modify $ \s -> s{encryptionState = Just newEncState}
+          ret <- liftIO $ Crypt.decrypt sr ciphertext
           pure ret
 
 encrypt :: Monad m => ByteString -> EncodedT m ByteString
