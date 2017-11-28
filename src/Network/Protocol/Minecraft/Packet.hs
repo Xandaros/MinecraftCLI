@@ -127,6 +127,16 @@ ClientSettings Playing 0x05
     deriving (Show, Generic)
     instance (Binary)
 
+ClickWindow Playing 0x08
+    windowId :: Word8
+    slot :: Int16
+    button :: Int8
+    actionNumber :: Int16
+    mode :: VarInt
+    clickedItem :: Slot
+    deriving (Show, Generic)
+    instance (Binary)
+
 KeepAlive Playing 0x0C
     keepAliveId :: VarInt
     deriving (Show, Generic)

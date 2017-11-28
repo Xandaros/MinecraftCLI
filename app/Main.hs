@@ -118,6 +118,7 @@ minecraftBot inbound tick = do
                        , (mergeList [ whereCommandE commands playerPos
                                     , mkPPAL <$> tag (current playerPos) tick
                                     , inventoryCommandE commands inventory
+                                    , dropCommandE commands
                                    ])
                        ]
          , mergeList [ T.pack . show <$> chatMessages

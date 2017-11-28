@@ -299,18 +299,14 @@ instance Binary Slot where
         if blockId == -1
            then pure $ Slot (-1) Nothing Nothing
            else Slot blockId <$> (Just <$> getInt8) <*> (Just <$> getInt8)
-    put = error "put for Slot not implemented"
-
-printSlot :: Slot -> String
-printSlot (Slot bid count dmg) = let dmgpart = case dmg of
-                                                   Just 0 -> ""
-                                                   Just d -> ":" ++ show d
-                                                   Nothing -> ""
-                                     countpart = case count of
-                                                   Just c -> show c ++ "x"
-                                                   Nothing -> ""
-                                 in countpart ++ show bid ++ dmgpart
-
+    put (Slot id count dmg) = do
+        putInt16be id
+        case count of
+          Just c -> putInt8 c
+          Nothing -> pure ()
+        case dmg of
+          Just d -> putInt8 d
+          Nothing -> pure ()
 
 -- TODO:
 -- Entity Metadata
