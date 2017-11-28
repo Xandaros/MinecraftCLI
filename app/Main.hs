@@ -30,23 +30,13 @@ import Network.Protocol.Minecraft
 import Network.Protocol.Minecraft.Packet
 import Network.Protocol.Minecraft.Types
 
+import Commands
 import DB
 
 import Debug.Trace
 
 botName :: String
 botName = "Yotanido"
-
-declareFields [d|
-    data ChatMsg = ChatMsg { chatMsgSender :: Text
-                           , chatMsgMessage :: Text
-                           } deriving (Show)
-
-    data ChatCommand = ChatCommand { chatCommandSender :: Text
-                                   , chatCommandCommand :: Text
-                                   , chatCommandArguments :: [Text]
-                                   } deriving (Show)
-    |]
 
 minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> IO ()
 minecraftThread inbound outbound shutdown profile = do
@@ -109,7 +99,7 @@ frpThread inbound outbound shutdown _profile = runSpiderHost $ hostApp app
               (outEvent, printEvent, shutdownEvent) <- minecraftBot inputEvent tickEvent
               performEvent_ $ fmap (liftIO . atomically . writeTChan outbound . NE.toList) outEvent
               performEvent_ $ fmap (sequence_ . fmap liftIO . fmap TIO.putStrLn . NE.toList) printEvent
-              performEvent_ $ fmap (const . liftIO $ threadDelay 10000 >> writeIORef shutdown True >> exitSuccess) shutdownEvent
+              performEvent_ $ fmap (const . liftIO $ threadDelay 5000 >> writeIORef shutdown True >> exitSuccess) shutdownEvent
               pure ()
 
 
@@ -117,50 +107,30 @@ minecraftBot :: (MonadHold t m, MonadFix m, Reflex t) => Event t CBPacket -> Eve
 minecraftBot inbound tick = do
     let chatMessages = chatMessageE inbound
         commands = commandE chatMessages
-    ticks <- zipListWithEvent (\a _ -> a) [1..] tick
-    seconds <- zipListWithEvent (\a _ -> a) [1..] $ ffilter ((==0) . (`mod` 20)) ticks
-    playerPos <- playerPositionD inbound
-    pure ( mergeList [ pingCommandE commands
-                     , quitCommandE commands
-                     , whereAreYouCommandE commands playerPos
-                     , tpCommandE commands
-                     -- , SBChatMessage (SBChatMessagePayload "Test") <$ ffilter ((==0) . (`mod` 10)) seconds
-                     ]
+    -- ticks <- zipListWithEvent (\a _ -> a) [1..] tick
+    -- seconds <- zipListWithEvent (\a _ -> a) ([1..] :: [Integer]) $ ffilter ((==0) . (`mod` (20 :: Integer))) ticks
+    playerPos <- playerPositionD inbound (tpCommandE commands)
+    pure ( foldl1 (<>) [ (fmap (SBChatMessage . SBChatMessagePayload . view network) <$> commandMessagesE commands)
+                       , (mergeList [ whereCommandE commands playerPos
+                                    , mkPPAL <$> tag (current playerPos) tick
+                                   ])
+                       ]
          , mergeList [ T.pack . show <$> chatMessages
                      , T.pack . show <$> commands
                      ]
          , void $ quitCommandE commands
          )
 
-playerPositionD :: (MonadHold t m, Reflex t) => Event t CBPacket -> m (Dynamic t (Double, Double, Double))
-playerPositionD inbound = do
-    holdDyn (0, 0, 0) $ fforMaybe inbound $ \case
-        CBPlayerPositionAndLook (CBPlayerPositionAndLookPayload x y z _yaw _pitch _flags _) ->
-            Just (x ^. from network, y ^. from network, z ^. from network)
-        _ -> Nothing
-
-whereAreYouCommandE :: Reflex t => Event t ChatCommand -> Dynamic t (Double, Double, Double) -> Event t SBPacket
-whereAreYouCommandE cmd pos = SBChatMessage . SBChatMessagePayload . view network . T.pack . show <$>
-    (tag (current pos) (ffilter ((=="where") . view command) cmd))
-
-tpCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
-tpCommandE cmd = ffor (ffilter ((=="tp") . view command) cmd) $ \c ->
-    let args = c ^. arguments
-        getArg n = view network . read $ T.unpack (args !! n)
-        x = getArg 0
-        y = getArg 1
-        z = getArg 2
-        pitch = getArg 3
-        yaw = getArg 4
-    in  if | length args == 3 -> SBPlayerPositionAndLook (SBPlayerPositionAndLookPayload x y z 0 0 True)
-           | length args == 5 -> SBPlayerPositionAndLook (SBPlayerPositionAndLookPayload x y z pitch yaw True)
-           | otherwise -> SBChatMessage $ SBChatMessagePayload "Unknown number of arguments. tp <x> <y> <z> [<pitch> <yaw>]"
-
-pingCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
-pingCommandE = (fmap . const) (SBChatMessage (SBChatMessagePayload "Pong!")) . ffilter ((=="ping") . view command)
-
-quitCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
-quitCommandE = (fmap . const) (SBChatMessage (SBChatMessagePayload "Bye :'(")) . ffilter ((=="quit") . view command)
+playerPositionD :: (MonadHold t m, Reflex t)
+                => Event t CBPacket
+                -> Event t (Double, Double, Double)
+                -> m (Dynamic t (Double, Double, Double))
+playerPositionD inbound tp = do
+    let inboundUpdate = fforMaybe inbound $ \case
+            CBPlayerPositionAndLook (CBPlayerPositionAndLookPayload x y z _yaw _pitch _flags _) ->
+                Just (x ^. from network, y ^. from network, z ^. from network)
+            _ -> Nothing
+    holdDyn (0, 0, 0) $ leftmost [inboundUpdate, tp]
 
 chatMessageE :: Reflex t => Event t CBPacket -> Event t ChatMsg
 chatMessageE inbound = fforMaybe inbound $ \case
@@ -208,7 +178,13 @@ main = do
     shutdown <- newIORef False
     concurrently_ (minecraftThread inbound outbound shutdown (head profiles)) (frpThread inbound outbound shutdown (head profiles))
 
+mkPPAL :: (Double, Double, Double) -> SBPacket
+mkPPAL (x, y, z) = SBPlayerPositionAndLook $ SBPlayerPositionAndLookPayload (x ^. network) (y ^. network) (z ^. network) 0 0 True
+
 whileM :: Monad f => f Bool -> f () -> f ()
 whileM c x = c >>= \case
     False -> pure ()
     True -> x >> whileM c x
+
+uncurry3 :: (a -> b -> c -> d) -> (a, b, c) -> d
+uncurry3 f (a, b, c) = f a b c

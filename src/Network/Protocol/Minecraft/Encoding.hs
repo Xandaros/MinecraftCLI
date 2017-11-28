@@ -222,17 +222,6 @@ cfb8Encrypt c i = BS.foldl magic (BS.empty,i)
         -- shift the new ciphertext into the shift register
         ivFinal = BS.tail iv `BS.snoc` ct
 
--- Function taken from https://github.com/Lazersmoke/civskell/blob/ebf4d761362ee42935faeeac0fe447abe96db0b5/src/Civskell/Tech/Encrypt.hs#L167-L175
--- Decrypt a bytestring using the cfb8 aes128 cipher, and the provided shift register
-cfb8Decrypt :: AES128 -> BS.ByteString -> BS.ByteString -> (BS.ByteString,BS.ByteString)
-cfb8Decrypt c i = BS.foldl magic (BS.empty,i)
-  where
-    magic (ds,iv) d = (ds `BS.snoc` pt,ivFinal)
-      where
-        pt = BS.head (ecbEncrypt c iv) `xor` d
-        -- snoc on cipher always
-        ivFinal = BS.tail iv `BS.snoc` d
-
 createServerHash :: Text -> ByteString -> ByteString -> String
 createServerHash serverId' secret pubKey =
     let serverId = TE.encodeUtf8 serverId'
