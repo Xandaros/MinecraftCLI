@@ -17,6 +17,8 @@ import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.IO.Class
 import           Data.IORef
 import           Data.List (isPrefixOf)
+import qualified Data.Map as M
+import           Data.Map (Map)
 import qualified Data.Text as T
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
@@ -56,8 +58,8 @@ minecraftThread inbound outbound shutdown profile = do
 
         sendPacket $ SBClientSettingsPayload "en_GB" 1 0 True 0x7F 1
         sendPacket $ SBClientStatusPayload 0
-        sendPacket $ SBChatMessage $ SBChatMessagePayload "Beep. Boop. I'm a bot"
-        -- sendPacket $ SBChatMessagePayload "/afk"
+        sendPacket $ SBChatMessage $ SBChatMessagePayload ("Beep. Boop. I'm a bot. Type \"" <> T.pack botName ^. network <> ": help\" for more information")
+        sendPacket $ SBChatMessagePayload "/afk"
 
         whileM (liftIO $ not <$> readIORef shutdown) $ do
             packetAvailable <- hasPacket
@@ -99,27 +101,45 @@ frpThread inbound outbound shutdown _profile = runSpiderHost $ hostApp app
               (outEvent, printEvent, shutdownEvent) <- minecraftBot inputEvent tickEvent
               performEvent_ $ fmap (liftIO . atomically . writeTChan outbound . NE.toList) outEvent
               performEvent_ $ fmap (sequence_ . fmap liftIO . fmap TIO.putStrLn . NE.toList) printEvent
-              performEvent_ $ fmap (const . liftIO $ threadDelay 5000 >> writeIORef shutdown True >> exitSuccess) shutdownEvent
+              performEvent_ $ fmap (const . liftIO $ threadDelay 10000 >> writeIORef shutdown True >> exitSuccess) shutdownEvent
               pure ()
 
 
-minecraftBot :: (MonadHold t m, MonadFix m, Reflex t) => Event t CBPacket -> Event t () -> m (Event t (NonEmpty SBPacket), Event t (NonEmpty Text), Event t ())
+minecraftBot :: (MonadHold t m, MonadFix m, Reflex t) => Event t CBPacket -> Event t ()
+             -> m (Event t (NonEmpty SBPacket), Event t (NonEmpty Text), Event t ())
 minecraftBot inbound tick = do
     let chatMessages = chatMessageE inbound
         commands = commandE chatMessages
     -- ticks <- zipListWithEvent (\a _ -> a) [1..] tick
     -- seconds <- zipListWithEvent (\a _ -> a) ([1..] :: [Integer]) $ ffilter ((==0) . (`mod` (20 :: Integer))) ticks
     playerPos <- playerPositionD inbound (tpCommandE commands)
+    inventory <- inventoryD inbound
     pure ( foldl1 (<>) [ (fmap (SBChatMessage . SBChatMessagePayload . view network) <$> commandMessagesE commands)
                        , (mergeList [ whereCommandE commands playerPos
                                     , mkPPAL <$> tag (current playerPos) tick
+                                    , inventoryCommandE commands inventory
                                    ])
                        ]
          , mergeList [ T.pack . show <$> chatMessages
                      , T.pack . show <$> commands
+                     , windowItemsE inbound
                      ]
          , void $ quitCommandE commands
          )
+
+inventoryD :: (MonadHold t m, MonadFix m, Reflex t) => Event t CBPacket -> m (Dynamic t (Map Int Slot))
+inventoryD inbound =
+    let inventoryChanges = fforMaybe inbound $ \case
+            CBSetSlot (CBSetSlotPayload 0 slot slotData) -> Just (slot, slotData)
+            _ -> Nothing
+        foldFun (slot, slotData) map = M.insert (fromIntegral slot :: Int) slotData map
+    in  foldDyn foldFun M.empty inventoryChanges
+
+windowItemsE :: Reflex t => Event t CBPacket -> Event t Text
+windowItemsE inbound = fforMaybe inbound $ \case
+    CBWindowItems (CBWindowItemsPayload wid slot) -> Just $ T.pack $ "WindowItems " <> show (wid, slot)
+    CBSetSlot (CBSetSlotPayload wid slot slotData) -> Just $ T.pack $ "SetSlot " <> show (wid, slot, slotData)
+    _ -> Nothing
 
 playerPositionD :: (MonadHold t m, Reflex t)
                 => Event t CBPacket

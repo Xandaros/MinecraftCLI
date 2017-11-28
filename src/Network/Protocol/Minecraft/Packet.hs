@@ -67,6 +67,19 @@ PlayerPositionAndLook Playing 0x2E
     posLookID :: VarInt
     deriving (Show, Generic)
     instance (Binary)
+
+WindowItems Playing 0x14
+    windowItemsWindowId :: Int8
+    count :: Int16
+    deriving (Show, Generic)
+    instance (Binary)
+
+SetSlot Playing 0x16
+    setSlotWindowId :: Int8
+    slot :: Int16
+    slotData :: Slot
+    deriving (Show, Generic)
+    instance (Binary)
 |]
 
 [packetsSB|
@@ -143,6 +156,8 @@ getPacket Playing = do
     pid <- get :: Get VarInt
     case pid of
       0x0F -> CBChatMessage <$> get
+      0x14 -> CBWindowItems <$> get
+      0x16 -> CBSetSlot <$> get
       0x1A -> CBDisconnectPlay <$> get
       0x1F -> CBKeepAlive <$> get
       0x23 -> CBJoinGame <$> get

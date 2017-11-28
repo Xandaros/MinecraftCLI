@@ -115,7 +115,7 @@ class NetworkVar src dst | src -> dst, dst -> src where
     network :: Iso' src dst
 
 newtype NetworkText = NetworkText {unNetworkText :: Text}
-    deriving (Show, Eq, Ord, IsString)
+    deriving (Show, Eq, Ord, IsString, Monoid)
 
 instance Binary NetworkText where
     get = do
@@ -286,10 +286,34 @@ chatToText (TranslationComponent _ key withs extra) = case key of
     where extras = mconcat (chatToText <$> extra)
 chatToText (StringComponent _ t extra) = t <> mconcat (chatToText <$> extra)
 
+data Slot = Slot { slotBlockId :: Int16
+                 , slotItemCount :: Maybe Int8
+                 , slotItemDamage :: Maybe Int8
+                 -- NBT
+                 } deriving (Show)
+makeFields ''Slot
+
+instance Binary Slot where
+    get = do
+        blockId <- getInt16be
+        if blockId == -1
+           then pure $ Slot (-1) Nothing Nothing
+           else Slot blockId <$> (Just <$> getInt8) <*> (Just <$> getInt8)
+    put = error "put for Slot not implemented"
+
+printSlot :: Slot -> String
+printSlot (Slot bid count dmg) = let dmgpart = case dmg of
+                                                   Just 0 -> ""
+                                                   Just d -> ":" ++ show d
+                                                   Nothing -> ""
+                                     countpart = case count of
+                                                   Just c -> show c ++ "x"
+                                                   Nothing -> ""
+                                 in countpart ++ show bid ++ dmgpart
+
 
 -- TODO:
 -- Entity Metadata
--- Slot
 -- NBT Tag
 -- Position
 -- Angle (Word8)
