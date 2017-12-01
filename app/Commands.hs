@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell, QuasiQuotes, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings, MultiWayIf, DataKinds #-}
+{-# LANGUAGE OverloadedStrings, MultiWayIf, DataKinds, ScopedTypeVariables #-}
 module Commands where
 
 import           Control.Lens
@@ -74,12 +74,20 @@ whereCommandE :: Reflex t => Event t ChatCommand -> Dynamic t (Double, Double, D
 whereCommandE cmd pos = chatString . show <$>
     tag (current pos) (filterCommand "where" cmd)
 
-inventoryCommandE :: Reflex t => Event t ChatCommand -> Dynamic t (Vector 46 Slot) -> Event t SBPacket
-inventoryCommandE cmd inventory = chatString . concat . intersperse ", " . catMaybes . fmap (prettySlot . fmap printSlot) . V.toList . V.zip (fromJust $ V.fromListN [0..]) <$>
-    tag (current inventory) (filterCommand "inventory" cmd)
+inventoryCommandE :: forall t. Reflex t => Event t ChatCommand -> Dynamic t (Vector 46 Slot) -> Event t SBPacket
+inventoryCommandE cmd inventory = chatString . renderSlots <$> inventoryEvents
         where prettySlot :: (Int, Maybe String) -> Maybe String
               prettySlot (_, Nothing) = Nothing
               prettySlot (slot, Just slotData) = Just $ slotData ++ "(" ++ show slot ++ ")"
+
+              inventoryEvents :: Event t (Vector 46 Slot)
+              inventoryEvents = tag (current inventory) (filterCommand "inventory" cmd)
+
+              zipped :: Vector 46 Slot -> Vector 46 (Int, Slot)
+              zipped = V.zip (fromJust $ V.fromListN [0..])
+
+              renderSlots :: Vector 46 Slot -> String
+              renderSlots = concat . intersperse ", " . catMaybes . fmap (prettySlot . fmap printSlot) . V.toList . zipped
 
 dropCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
 dropCommandE cmd = fforMaybe (filterCommand "drop" cmd) $ \c ->
