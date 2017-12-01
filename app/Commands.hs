@@ -17,6 +17,7 @@ import           Reflex
 import Network.Protocol.Minecraft.Packet
 import Network.Protocol.Minecraft.Types
 
+import Inventory
 import ItemLookup
 
 declareFields [d|
@@ -89,14 +90,13 @@ inventoryCommandE cmd inventory = chatString . renderSlots <$> inventoryEvents
               renderSlots :: Vector 46 Slot -> String
               renderSlots = concat . intersperse ", " . catMaybes . fmap (prettySlot . fmap printSlot) . V.toList . zipped
 
-dropCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
+dropCommandE :: Reflex t => Event t ChatCommand -> Event t InventoryAction
 dropCommandE cmd = fforMaybe (filterCommand "drop" cmd) $ \c ->
     let args = c ^. arguments
         getArg n = read $ T.unpack (args !! n)
         slot = getArg 0
         --amount = getArg 1
-    in  if | length args == 1 -> Just $ SBClickWindow (SBClickWindowPayload 0 slot 1 1 4 (Slot (-1) Nothing Nothing))
-           | length args == 2 -> Just $ SBChatMessage (SBChatMessagePayload "Dropping specified amount not implemented yet")
+    in  if | length args == 1 -> Just $ DropStack 0 slot
            | otherwise -> Nothing
 
 chatString :: String -> SBPacket

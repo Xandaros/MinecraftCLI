@@ -98,31 +98,34 @@ frpThread inbound outbound shutdown _profile = runSpiderHost $ hostApp app
               void . liftIO . forkIO . forever $ threadDelay (floor (1/20 * 1000000 :: Double)) >>= tickFire
               void . liftIO . forkIO . forever $ atomically (readTChan inbound) >>= inputFire
               (outEvent, printEvent, shutdownEvent) <- minecraftBot inputEvent tickEvent
-              performEvent_ $ fmap (liftIO . atomically . writeTChan outbound . NE.toList) outEvent
+              performEvent_ $ fmap (liftIO . atomically . writeTChan outbound) outEvent
               performEvent_ $ fmap (sequence_ . fmap liftIO . fmap TIO.putStrLn . NE.toList) printEvent
               performEvent_ $ fmap (const . liftIO $ threadDelay 10000 >> writeIORef shutdown True >> exitSuccess) shutdownEvent
               pure ()
 
-
 minecraftBot :: (MonadHold t m, MonadFix m, Reflex t) => Event t CBPacket -> Event t ()
-             -> m (Event t (NonEmpty SBPacket), Event t (NonEmpty Text), Event t ())
+             -> m (Event t [SBPacket], Event t (NonEmpty Text), Event t ())
 minecraftBot inbound tick = do
     let chatMessages = chatMessageE inbound
         commands = commandE chatMessages
     -- ticks <- zipListWithEvent (\a _ -> a) [1..] tick
     -- seconds <- zipListWithEvent (\a _ -> a) ([1..] :: [Integer]) $ ffilter ((==0) . (`mod` (20 :: Integer))) ticks
     playerPos <- playerPositionD inbound (tpCommandE commands)
-    inventory <- inventoryD (setSlotE inbound)
-    pure ( foldl1 (<>) [ (fmap (SBChatMessage . SBChatMessagePayload . view network) <$> commandMessagesE commands)
-                       , (mergeList [ whereCommandE commands playerPos
-                                    , mkPPAL <$> tag (current playerPos) tick
-                                    , inventoryCommandE commands inventory
-                                    , dropCommandE commands
-                                   ])
+    let inventoryActions  = mergeList [dropCommandE commands]
+    (transactionPackets, localInventoryActions) <- transactionsD inventoryActions (transactionConfirmationsE inbound)
+    inventory <- inventoryD (leftmost $ [(cbInventoryActionsE inbound), localInventoryActions])
+    pure ( foldl1 (<>) [ NE.toList <$> (fmap (SBChatMessage . SBChatMessagePayload . view network) <$> commandMessagesE commands)
+                       , transactionPackets
+                       , NE.toList <$> (mergeList [ whereCommandE commands playerPos
+                                                  , mkPPAL <$> tag (current playerPos) tick
+                                                  , inventoryCommandE commands inventory
+                                                  --, chatString . show <$> tagPromptlyDyn transactions (ffilter ((==0) . (`mod` 10)) seconds)
+                                                  ])
                        ]
          , mergeList [ T.pack . show <$> chatMessages
                      , T.pack . show <$> commands
                      , windowItemsE inbound
+                     , T.pack . show <$> transactionConfirmationsE inbound
                      ]
          , void $ quitCommandE commands
          )

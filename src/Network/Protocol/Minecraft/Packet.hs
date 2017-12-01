@@ -36,6 +36,26 @@ ChatMessage Playing 0x0F
     deriving (Show, Generic)
     instance (Binary)
 
+ConfirmTransaction Playing 0x11
+    confirmTransactionWindowId :: Int8
+    actionNumber :: Int16
+    accepted :: Bool
+    deriving (Show, Generic)
+    instance (Binary)
+
+WindowItems Playing 0x14
+    windowItemsWindowId :: Int8
+    count :: Int16
+    deriving (Show, Generic)
+    instance (Binary)
+
+SetSlot Playing 0x16
+    setSlotWindowId :: Int8
+    slot :: Int16
+    slotData :: Slot
+    deriving (Show, Generic)
+    instance (Binary)
+
 DisconnectPlay Playing 0x1A
     reason :: NetworkText
     deriving (Show, Generic)
@@ -65,19 +85,6 @@ PlayerPositionAndLook Playing 0x2E
     pitch :: NetworkFloat
     flags :: Word8
     posLookID :: VarInt
-    deriving (Show, Generic)
-    instance (Binary)
-
-WindowItems Playing 0x14
-    windowItemsWindowId :: Int8
-    count :: Int16
-    deriving (Show, Generic)
-    instance (Binary)
-
-SetSlot Playing 0x16
-    setSlotWindowId :: Int8
-    slot :: Int16
-    slotData :: Slot
     deriving (Show, Generic)
     instance (Binary)
 |]
@@ -166,6 +173,7 @@ getPacket Playing = do
     pid <- get :: Get VarInt
     case pid of
       0x0F -> CBChatMessage <$> get
+      0x11 -> CBConfirmTransaction <$> get
       0x14 -> CBWindowItems <$> get
       0x16 -> CBSetSlot <$> get
       0x1A -> CBDisconnectPlay <$> get
