@@ -1,16 +1,18 @@
 {-# LANGUAGE TemplateHaskell, QuasiQuotes, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings, MultiWayIf #-}
+{-# LANGUAGE OverloadedStrings, MultiWayIf, DataKinds #-}
 module Commands where
 
-import Control.Lens
-import Data.List (intersperse)
-import Data.List.NonEmpty (NonEmpty((:|)))
+import           Control.Lens
+import           Data.List (intersperse)
+import           Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.Map as Map
-import Data.Map (Map)
-import Data.Monoid ((<>))
-import Data.Text (Text)
+import           Data.Maybe (fromJust, catMaybes)
+import           Data.Monoid ((<>))
+import           Data.Vector.Sized (Vector)
+import qualified Data.Vector.Sized as V
+import           Data.Text (Text)
 import qualified Data.Text as T
-import Reflex
+import           Reflex
 
 import Network.Protocol.Minecraft.Packet
 import Network.Protocol.Minecraft.Types
@@ -72,11 +74,12 @@ whereCommandE :: Reflex t => Event t ChatCommand -> Dynamic t (Double, Double, D
 whereCommandE cmd pos = chatString . show <$>
     tag (current pos) (filterCommand "where" cmd)
 
-inventoryCommandE :: Reflex t => Event t ChatCommand -> Dynamic t (Map Int Slot) -> Event t SBPacket
-inventoryCommandE cmd inventory = chatString . concat . intersperse ", " . fmap (prettySlot . fmap printSlot) . Map.toList <$>
+inventoryCommandE :: Reflex t => Event t ChatCommand -> Dynamic t (Vector 46 Slot) -> Event t SBPacket
+inventoryCommandE cmd inventory = chatString . concat . intersperse ", " . catMaybes . fmap (prettySlot . fmap printSlot) . V.toList . V.zip (fromJust $ V.fromListN [0..]) <$>
     tag (current inventory) (filterCommand "inventory" cmd)
-        where prettySlot :: (Int, String) -> String
-              prettySlot (slot, slotData) = slotData ++ "(" ++ show slot ++ ")"
+        where prettySlot :: (Int, Maybe String) -> Maybe String
+              prettySlot (_, Nothing) = Nothing
+              prettySlot (slot, Just slotData) = Just $ slotData ++ "(" ++ show slot ++ ")"
 
 dropCommandE :: Reflex t => Event t ChatCommand -> Event t SBPacket
 dropCommandE cmd = fforMaybe (filterCommand "drop" cmd) $ \c ->
@@ -91,7 +94,8 @@ dropCommandE cmd = fforMaybe (filterCommand "drop" cmd) $ \c ->
 chatString :: String -> SBPacket
 chatString = SBChatMessage . SBChatMessagePayload . view network . T.pack . take 256
 
-printSlot :: Slot -> String
+printSlot :: Slot -> Maybe String
+printSlot (Slot (-1) _ _) = Nothing
 printSlot (Slot bid count dmg) = let dmgpart = case dmg of
                                                    Just 0 -> ""
                                                    Just d -> ":" ++ show d
@@ -102,4 +106,4 @@ printSlot (Slot bid count dmg) = let dmgpart = case dmg of
                                      itempart = case Map.lookup (fromIntegral bid) itemLookup of
                                                   Just name -> name
                                                   Nothing -> show bid
-                                 in countpart ++ itempart ++ dmgpart
+                                 in Just $ countpart ++ itempart ++ dmgpart

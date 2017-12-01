@@ -17,8 +17,6 @@ import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.IO.Class
 import           Data.IORef
 import           Data.List (isPrefixOf)
-import qualified Data.Map as M
-import           Data.Map (Map)
 import qualified Data.Text as T
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
@@ -34,6 +32,7 @@ import Network.Protocol.Minecraft.Types
 
 import Commands
 import DB
+import Inventory
 
 import Debug.Trace
 
@@ -113,7 +112,7 @@ minecraftBot inbound tick = do
     -- ticks <- zipListWithEvent (\a _ -> a) [1..] tick
     -- seconds <- zipListWithEvent (\a _ -> a) ([1..] :: [Integer]) $ ffilter ((==0) . (`mod` (20 :: Integer))) ticks
     playerPos <- playerPositionD inbound (tpCommandE commands)
-    inventory <- inventoryD inbound
+    inventory <- inventoryD (setSlotE inbound)
     pure ( foldl1 (<>) [ (fmap (SBChatMessage . SBChatMessagePayload . view network) <$> commandMessagesE commands)
                        , (mergeList [ whereCommandE commands playerPos
                                     , mkPPAL <$> tag (current playerPos) tick
@@ -127,14 +126,6 @@ minecraftBot inbound tick = do
                      ]
          , void $ quitCommandE commands
          )
-
-inventoryD :: (MonadHold t m, MonadFix m, Reflex t) => Event t CBPacket -> m (Dynamic t (Map Int Slot))
-inventoryD inbound =
-    let inventoryChanges = fforMaybe inbound $ \case
-            CBSetSlot (CBSetSlotPayload 0 slot slotData) -> Just (slot, slotData)
-            _ -> Nothing
-        foldFun (slot, slotData) map = M.insert (fromIntegral slot :: Int) slotData map
-    in  foldDyn foldFun M.empty inventoryChanges
 
 windowItemsE :: Reflex t => Event t CBPacket -> Event t Text
 windowItemsE inbound = fforMaybe inbound $ \case

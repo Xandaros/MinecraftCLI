@@ -308,6 +308,13 @@ instance Binary Slot where
           Just d -> putInt8 d
           Nothing -> pure ()
 
+emptySlot :: Slot
+emptySlot = Slot (-1) Nothing Nothing
+
+isEmptySlot :: Slot -> Bool
+isEmptySlot (Slot (-1) _ _) = True
+isEmptySlot _ = False
+
 -- TODO:
 -- Entity Metadata
 -- NBT Tag
