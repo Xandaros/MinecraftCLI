@@ -73,11 +73,11 @@ JoinGame Playing 0x23
     instance (Binary)
 
 KeepAlive Playing 0x1F
-    keepAliveId :: VarInt
+    keepAliveId :: Int64
     deriving (Show, Generic)
     instance (Binary)
 
-PlayerPositionAndLook Playing 0x2E
+PlayerPositionAndLook Playing 0x2F
     x :: NetworkDouble
     y :: NetworkDouble
     z :: NetworkDouble
@@ -114,17 +114,17 @@ TeleportConfirm Playing 0x00
     deriving (Show, Generic)
     instance (Binary)
 
-ChatMessage Playing 0x03
+ChatMessage Playing 0x02
     chatMessage :: NetworkText
     deriving (Show, Generic)
     instance (Binary)
 
-ClientStatus Playing 0x04
+ClientStatus Playing 0x03
     actionID :: VarInt
     deriving (Show, Generic)
     instance (Binary)
 
-ClientSettings Playing 0x05
+ClientSettings Playing 0x04
     locale :: NetworkText
     viewDistance :: Int8
     chatMode :: VarInt
@@ -134,7 +134,7 @@ ClientSettings Playing 0x05
     deriving (Show, Generic)
     instance (Binary)
 
-ClickWindow Playing 0x08
+ClickWindow Playing 0x07
     windowId :: Word8
     slot :: Int16
     button :: Int8
@@ -144,12 +144,12 @@ ClickWindow Playing 0x08
     deriving (Show, Generic)
     instance (Binary)
 
-KeepAlive Playing 0x0C
-    keepAliveId :: VarInt
+KeepAlive Playing 0x0B
+    keepAliveId :: Int64
     deriving (Show, Generic)
     instance (Binary)
 
-PlayerPositionAndLook Playing 0x0F
+PlayerPositionAndLook Playing 0x0E
     x :: NetworkDouble
     y :: NetworkDouble
     z :: NetworkDouble
@@ -179,7 +179,7 @@ getPacket Playing = do
       0x1A -> CBDisconnectPlay <$> get
       0x1F -> CBKeepAlive <$> get
       0x23 -> CBJoinGame <$> get
-      0x2E -> CBPlayerPositionAndLook <$> get
+      0x2F -> CBPlayerPositionAndLook <$> get
       _ -> CBUnknown <$> get
 getPacket _ = CBUnknown <$> get
 

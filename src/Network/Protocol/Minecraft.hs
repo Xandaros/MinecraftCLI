@@ -92,7 +92,7 @@ handshake :: (Monad m, MonadIO m) => MinecraftT m ()
 handshake = do
     host <- getStates mc_server
     port <- getStates mc_port
-    sendPacket $ SBHandshakePayload 335 (NetworkText $ Text.pack host) (fromIntegral port) LoggingIn
+    sendPacket $ SBHandshakePayload 340 (NetworkText $ Text.pack host) (fromIntegral port) LoggingIn
     setConnectionState LoggingIn
 
 login :: (Monad m, MonadIO m) => Text -> Text -> Text -> MinecraftT m (Either String CBLoginSuccessPayload)
@@ -101,8 +101,7 @@ login username uuid token = do
     p <- receivePacket
     case p of
       Just (CBLoginSuccess succ) -> setConnectionState Playing >> pure (Right succ)
-      _ -> do
-          Just (CBEncryptionRequest encRequest) <- pure p
+      Just (CBEncryptionRequest encRequest) -> do
           sharedSecret <- liftIO $ generateSharedKey
           let serverHash = createServerHash (unNetworkText $ encRequest ^. serverID) sharedSecret ((lengthBS . view pubKey) encRequest)
               joinRequest = Yggdrasil.JoinRequest token uuid (Text.pack serverHash)
