@@ -41,9 +41,6 @@ import Inventory
 
 import Debug.Trace
 
-botName :: String
-botName = "Yotanido"
-
 minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> Server -> (String -> IO ()) -> IO ()
 minecraftThread inbound outbound shutdown profile server printfunc = do
     void $ connect (T.unpack $ server ^. serverAddress) Nothing $ do
