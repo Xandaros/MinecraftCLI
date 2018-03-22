@@ -7,6 +7,7 @@ import           Data.Aeson
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.List.NonEmpty as NE
 import           Data.List.NonEmpty (NonEmpty)
+import           Data.List.Split (splitOn)
 import           Data.Monoid ((<>))
 import           Control.Concurrent (threadDelay, forkIO)
 import           Control.Concurrent.Async
@@ -22,6 +23,7 @@ import           Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import           Safe
 import           System.Console.Haskeline
+import           System.Console.Haskeline.Completion
 import           System.Exit (exitSuccess)
 import           Reflex hiding (performEvent_)
 import           Reflex.Host.App
@@ -264,9 +266,39 @@ connectInput (profile:server:_) = do
                           link2 mc frp
 connectInput _ = outputStrLn "You need to provide a profile and a server"
 
+completeInput :: CompletionFunc IO
+completeInput (l, r) = case splitOn " " (reverse l) of
+                         (_:[]) -> completeWords ["quit", "profiles", "servers", "connect"] (l, r)
+                         ("profiles":_) -> completeProfiles (l, r)
+                         ("servers":_) -> completeServers (l, r)
+                         ("connect":profile:[]) -> completeProfile (l, r)
+                         ("connect":_:server:[]) -> completeServer (l, r)
+                         _ -> noCompletion (l, r)
+    where
+        completeWords :: [String] -> CompletionFunc IO
+        completeWords ws = completeWord Nothing " " $ \w -> pure . map simpleCompletion . filter (w `isPrefixOf`) $ ws
+
+        completeProfile :: CompletionFunc IO
+        completeProfile (l, r) = (fmap (T.unpack . view profileUsername) <$> DB.getProfiles) >>= flip completeWords (l, r)
+
+        completeServer :: CompletionFunc IO
+        completeServer (l, r) = (fmap (T.unpack . view serverName) <$> DB.getServers) >>= flip completeWords (l, r)
+
+        completeProfiles :: CompletionFunc IO
+        completeProfiles (l, r) = case splitOn " " (reverse l) of
+                                    (_:_:[]) -> completeWords ["help", "list", "new", "delete"] (l, r)
+                                    (_:"delete":profile:[]) -> completeProfile (l, r)
+                                    _ -> noCompletion (l, r)
+
+        completeServers :: CompletionFunc IO
+        completeServers (l, r) = case splitOn " " (reverse l) of
+                                    (_:_:[]) -> completeWords ["help", "list", "new", "delete"] (l, r)
+                                    (_:"delete":profile:[]) -> completeServer (l, r)
+                                    _ -> noCompletion (l, r)
+
 main :: IO ()
 main = do
-    runInputT defaultSettings{historyFile=Just ".minecraftcli_history"} $ do
+    runInputT (defaultSettings :: Settings IO){historyFile=Just ".minecraftcli_history", complete=completeInput} $ do
         loop
         where loop :: InputT IO ()
               loop = do
