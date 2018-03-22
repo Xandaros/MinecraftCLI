@@ -100,7 +100,7 @@ frpThread inbound outbound shutdown profile printfunc = runSpiderHost $ hostApp 
               (outEvent, printEvent, shutdownEvent) <- minecraftBot (profile ^. profileUsername) inputEvent tickEvent
               performEvent_ $ fmap (liftIO . atomically . writeTChan outbound) outEvent
               performEvent_ $ fmap (sequence_ . fmap liftIO . fmap (printfunc . T.unpack) . NE.toList) printEvent
-              performEvent_ $ fmap (const . liftIO $ threadDelay 10000 >> writeIORef shutdown True >> exitSuccess) shutdownEvent
+              performEvent_ $ fmap (const . liftIO $ threadDelay 10000 >> writeIORef shutdown True) shutdownEvent
               pure ()
 
 minecraftBot :: (MonadHold t m, MonadFix m, Reflex t) => Text -> Event t CBPacket -> Event t ()
@@ -259,8 +259,9 @@ connectInput (profile:server:_) = do
                           inbound <- atomically $ newTChan
                           outbound <- atomically $ newTChan
                           shutdown <- newIORef False
-                          async (minecraftThread inbound outbound shutdown newprofile server printfunc) >>= link
-                          async (frpThread inbound outbound shutdown newprofile printfunc) >>= link
+                          mc <- async (minecraftThread inbound outbound shutdown newprofile server printfunc)
+                          frp <- async (frpThread inbound outbound shutdown newprofile printfunc)
+                          link2 mc frp
 connectInput _ = outputStrLn "You need to provide a profile and a server"
 
 main :: IO ()
