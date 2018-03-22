@@ -266,7 +266,7 @@ connectInput _ = outputStrLn "You need to provide a profile and a server"
 
 main :: IO ()
 main = do
-    runInputT defaultSettings $ do
+    runInputT defaultSettings{historyFile=Just ".minecraftcli_history"} $ do
         loop
         where loop :: InputT IO ()
               loop = do
