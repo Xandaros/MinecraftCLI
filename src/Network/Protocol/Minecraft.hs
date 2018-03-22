@@ -82,7 +82,6 @@ connect host port' mc = do
        then pure . Left $ "Unable to find host " ++ host
        else do
            sock <- liftIO $ socket AF_INET Stream defaultProtocol
-           liftIO $ print (addrAddress $ addrs !! 0)
            liftIO $ Socket.connect sock (addrAddress $ addrs !! 0)
            hdl <- liftIO $ socketToHandle sock ReadWriteMode
            Right <$> runMinecraftT hdl (defaultMinecraftState & mc_server .~ host & mc_port .~ port & handle .~ hdl) mc
