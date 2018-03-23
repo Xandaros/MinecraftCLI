@@ -4,7 +4,7 @@ module Network.Protocol.Minecraft.Packet.TH ( packets
 
 import Control.Lens.TH
 import Control.Monad (join)
-import Data.Binary (Binary, put)
+import Data.Binary (Binary, put, get, Get)
 import Data.Char (toLower, toUpper)
 import GHC.Generics (Generic)
 import Language.Haskell.TH
@@ -110,7 +110,7 @@ declarationsQuoter s = do
     (cbdecs, cbpayloads) <- mkDecs "CB" cb
     (sbdecs, sbpayloads) <- mkDecs "SB" sb
     lensifiedPayloads <- declareFields (pure $ cbpayloads ++ sbpayloads)
-    pure $ cbdecs ++ sbdecs ++ lensifiedPayloads
+    pure $ getPacketSig : mkGetPacket cb : cbdecs ++ sbdecs ++ lensifiedPayloads
 
 
 mkDecs :: String -> [Declaration] -> Q ([Dec], [Dec])
@@ -185,3 +185,28 @@ mkConsPayload hasPacketID prefix Declaration{..} = do
 
     let con = NormalC (mkName $ prefix ++ declarationName) . (:[]) . mkBangType $ ConT payloadType
     pure $ (con, payload : packetIDInstance ++ instanceDecls)
+
+getPacketSig :: Dec
+getPacketSig = SigD (mkName "getPacket") (AppT (AppT ArrowT (ConT ''ConnectionState)) (AppT (ConT ''Get) (ConT (mkName "CBPacket"))))
+
+mkGetPacket :: [Declaration] -> Dec
+mkGetPacket decls = FunD (mkName "getPacket") $ clauses
+    where hanshakingDecls = filter ((==Handshaking) . connectionState) decls
+          loggingInDecls = filter ((==LoggingIn) . connectionState) decls
+          playingDecls = filter ((==Playing) . connectionState) decls
+          clauses = --mkGetPacketClause 'Handshaking hanshakingDecls
+                    mkGetPacketClause 'LoggingIn loggingInDecls
+                  : mkGetPacketClause 'Playing playingDecls
+                  : [Clause [WildP] defaultBody []]
+
+          mkGetPacketClause :: Name -> [Declaration] -> Clause
+          mkGetPacketClause state decls = Clause [ConP state []]
+                                                 (NormalB (DoE [ BindS (VarP (mkName "pid")) (SigE (VarE 'get) (AppT (ConT ''Get) (ConT ''VarInt)))
+                                                               , NoBindS (CaseE (VarE (mkName "pid")) $ (mkGetPacketMatch <$> decls) ++ [Match WildP defaultBody []])
+                                                               ]))
+                                                 []
+          mkGetPacketMatch :: Declaration -> Match
+          mkGetPacketMatch Declaration{..} = Match (LitP (IntegerL packetID)) (NormalB (AppE (AppE (VarE 'fmap) (ConE (mkName $ "CB" ++ declarationName))) (VarE 'get))) []
+
+          defaultBody :: Body
+          defaultBody = NormalB (AppE (AppE (VarE 'fmap) (ConE (mkName "CBUnknown"))) (VarE 'get))

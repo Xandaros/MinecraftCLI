@@ -161,7 +161,7 @@ data ConnectionState = Handshaking
                      | LoggingIn
                      | Playing
                      | GettingStatus
-                     deriving (Show, Lift)
+                     deriving (Show, Lift, Eq)
 
 class HasPacketID f where
     getPacketID :: f -> VarInt

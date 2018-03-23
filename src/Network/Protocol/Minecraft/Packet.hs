@@ -163,29 +163,6 @@ PlayerPositionAndLook Playing 0x0E
     instance (Binary)
 |]
 
-getPacket :: ConnectionState -> Get CBPacket
-getPacket Handshaking = undefined
-getPacket LoggingIn = do
-    pid <- get :: Get VarInt
-    case pid of
-      1 -> CBEncryptionRequest <$> get
-      2 -> CBLoginSuccess <$> get
-      3 -> CBSetCompression <$> get
-      _ -> CBUnknown <$> get
-getPacket Playing = do
-    pid <- get :: Get VarInt
-    case pid of
-      0x0F -> CBChatMessage <$> get
-      0x11 -> CBConfirmTransaction <$> get
-      0x14 -> CBWindowItems <$> get
-      0x16 -> CBSetSlot <$> get
-      0x1A -> CBDisconnectPlay <$> get
-      0x1F -> CBKeepAlive <$> get
-      0x23 -> CBJoinGame <$> get
-      0x2F -> CBPlayerPositionAndLook <$> get
-      _ -> CBUnknown <$> get
-getPacket _ = CBUnknown <$> get
-
 instance Binary CBUnknownPayload where
     get = CBUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
     put (CBUnknownPayload a) = putByteString a
