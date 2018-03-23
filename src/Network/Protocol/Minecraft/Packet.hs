@@ -11,7 +11,8 @@ import GHC.Generics
 import Network.Protocol.Minecraft.Packet.TH
 import Network.Protocol.Minecraft.Types
 
-[packetsCB|
+[packets|
+[Clientbound]
 EncryptionRequest LoggingIn 1
     serverID :: NetworkText
     pubKey :: LengthBS
@@ -37,20 +38,20 @@ ChatMessage Playing 0x0F
     instance (Binary)
 
 ConfirmTransaction Playing 0x11
-    confirmTransactionWindowId :: Int8
+    windowId :: Int8
     actionNumber :: Int16
     accepted :: Bool
     deriving (Show, Generic)
     instance (Binary)
 
 WindowItems Playing 0x14
-    windowItemsWindowId :: Int8
+    windowId :: Int8
     count :: Int16
     deriving (Show, Generic)
     instance (Binary)
 
 SetSlot Playing 0x16
-    setSlotWindowId :: Int8
+    windowId :: Int8
     slot :: Int16
     slotData :: Slot
     deriving (Show, Generic)
@@ -87,9 +88,11 @@ PlayerPositionAndLook Playing 0x2F
     posLookID :: VarInt
     deriving (Show, Generic)
     instance (Binary)
-|]
 
-[packetsSB|
+
+
+
+[Serverbound]
 Handshake Handshaking 0x00
     protocolVersion :: VarInt
     address :: NetworkText
@@ -190,6 +193,3 @@ instance Binary CBUnknownPayload where
 instance Binary SBUnknownPayload where
     get = SBUnknownPayload . BSL.toStrict <$> getRemainingLazyByteString
     put (SBUnknownPayload a) = putByteString a
-
-lensify ''CBPacket
-lensify ''SBPacket

@@ -1,7 +1,5 @@
 {-# LANGUAGE TemplateHaskell, RecordWildCards #-}
-module Network.Protocol.Minecraft.Packet.TH ( packetsCB
-                                            , packetsSB
-                                            , lensify
+module Network.Protocol.Minecraft.Packet.TH ( packets
                                             ) where
 
 import Control.Lens.TH
@@ -30,18 +28,25 @@ data Field = Field { fieldName :: String
                    , fieldType :: String
                    } deriving (Show)
 
-parseDeclarations :: Monad m => (String, Int, Int) -> String -> m [Declaration]
+parseDeclarations :: Monad m => (String, Int, Int) -> String -> m ([Declaration], [Declaration])
 parseDeclarations (file, line, col) s =
     case parse p "" s of
       Left err -> fail $ show err
       Right decls -> pure decls
     where
-        p :: Parser [Declaration]
+        p :: Parser ([Declaration], [Declaration])
         p = do
             pos <- getPosition
             setPosition $ (flip setSourceName) file $ (flip setSourceLine) line $ (flip setSourceColumn) col $ pos
             spaces
-            many $ (parseDeclaration <* many newline)
+            _ <- string "[Clientbound]"
+            spaces
+            cb <- many $ (parseDeclaration <* many newline)
+            spaces
+            _ <- string "[Serverbound]"
+            spaces
+            sb <- many $ (parseDeclaration <* many newline)
+            pure (cb, sb)
 
 parseDeclaration :: Parser Declaration
 parseDeclaration = Declaration <$> many alphaNum
@@ -74,19 +79,12 @@ parseKWList kw = space *> spaces *> string kw *> spaces *> char '(' *>
     ((spaces *> many1 alphaNum <* spaces) `sepBy` char ',') <*
     char ')'
 
-packetsCB :: QuasiQuoter
-packetsCB = QuasiQuoter { quoteDec = declarationsQuoter "CB"
-                        , quoteExp = undefined
-                        , quotePat = undefined
-                        , quoteType = undefined
-                        }
-
-packetsSB :: QuasiQuoter
-packetsSB = QuasiQuoter { quoteDec = declarationsQuoter "SB"
-                        , quoteExp = undefined
-                        , quotePat = undefined
-                        , quoteType = undefined
-                        }
+packets :: QuasiQuoter
+packets = QuasiQuoter { quoteDec = declarationsQuoter
+                      , quoteExp = undefined
+                      , quotePat = undefined
+                      , quoteType = undefined
+                      }
 
 defaultBang :: Bang
 defaultBang = Bang NoSourceUnpackedness NoSourceStrictness
@@ -105,11 +103,18 @@ mkType (x:xs) = do
        then pure $ ConT typ
        else AppT (ConT typ) <$> mkType xs
 
-declarationsQuoter :: String -> String -> DecsQ
-declarationsQuoter prefix s = do
+declarationsQuoter :: String -> DecsQ
+declarationsQuoter s = do
     loc <- location
-    decls <- parseDeclarations (loc_filename loc, fst $ loc_start loc, snd $ loc_start loc) s
+    (cb, sb) <- parseDeclarations (loc_filename loc, fst $ loc_start loc, snd $ loc_start loc) s
+    (cbdecs, cbpayloads) <- mkDecs "CB" cb
+    (sbdecs, sbpayloads) <- mkDecs "SB" sb
+    lensifiedPayloads <- declareFields (pure $ cbpayloads ++ sbpayloads)
+    pure $ cbdecs ++ sbdecs ++ lensifiedPayloads
 
+
+mkDecs :: String -> [Declaration] -> Q ([Dec], [Dec])
+mkDecs prefix decls = do
     (cons, payloads) <- unzip <$> (sequence $ mkConsPayload True prefix <$> decls)
     (unknownC, unknownPL) <- mkConsPayload False prefix $ Declaration { declarationName = "Unknown"
                                                                       , fields = [Field "unknownPayload" "ByteString"]
@@ -123,7 +128,7 @@ declarationsQuoter prefix s = do
         packet = DataD [] packetName [] Nothing (unknownC : cons) [DerivClause Nothing [ConT ''Show, ConT ''Generic]]
     packetHasPacketID <- generateHasPacketID packetName cons
     packetBinaryInstance <- packetBinary packetName cons
-    pure $ packet : packetHasPacketID : packetBinaryInstance : join payloads ++ unknownPL
+    pure $ (packet : packetHasPacketID : [packetBinaryInstance], unknownPL ++ join payloads)
 
 packetBinary :: Name -> [Con] -> Q Dec
 packetBinary packet cons = do
@@ -180,9 +185,3 @@ mkConsPayload hasPacketID prefix Declaration{..} = do
 
     let con = NormalC (mkName $ prefix ++ declarationName) . (:[]) . mkBangType $ ConT payloadType
     pure $ (con, payload : packetIDInstance ++ instanceDecls)
-
-lensify :: Name -> DecsQ
-lensify packet' = do
-    TyConI (DataD _ _ _ _ cons _) <- reify packet'
-    let conNames = (\(NormalC _ [(_, ConT n)]) -> n) <$> cons
-    join <$> makeFields `mapM` conNames

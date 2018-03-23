@@ -195,9 +195,7 @@ encryptionResponse secret encryptionRequest = runMaybeT $ do
     publicKey <- maybeZero $ decodePubKey (lengthBS $ encryptionRequest ^. pubKey)
     encryptedSecret <- eitherAToMaybeT $ RSA.encrypt publicKey secret
     encryptedToken <- eitherAToMaybeT $ RSA.encrypt publicKey (lengthBS $ encryptionRequest ^. verifyToken)
-    pure $ SBEncryptionResponsePayload { sBEncryptionResponsePayloadSharedSecret = LengthBS 128 encryptedSecret
-                                       , sBEncryptionResponsePayloadVerifyToken = LengthBS 128 encryptedToken
-                                       }
+    pure $ SBEncryptionResponsePayload (LengthBS 128 encryptedSecret) (LengthBS 128 encryptedToken)
 
 maybeZero :: (MonadPlus m) => Maybe a -> m a
 maybeZero = maybe mzero pure
