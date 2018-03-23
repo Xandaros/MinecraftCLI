@@ -89,6 +89,13 @@ PlayerPositionAndLook Playing 0x2F
     deriving (Show, Generic)
     instance (Binary)
 
+Respawn Playing 0x35
+    dimension :: Dimension
+    difficulty :: Word8
+    gamemode :: Word8
+    levelType :: NetworkText
+    deriving (Show, Generic)
+    instance (Binary)
 
 
 

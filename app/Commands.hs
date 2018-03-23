@@ -42,7 +42,7 @@ checkArguments lens mes = fmapMaybe $ \cmd -> if length (cmd ^. arguments) `notE
 helpText :: NonEmpty Text
 helpText = "Hi! I'm a bot written by Xandaros and am currently under active development."
         :| [ "Available commands are:"
-           , "help, ping, quit, tp, where, inventory, drop"
+           , "help, ping, quit, tp, where, inventory, drop, dimension"
            -- , "To get more information about a specific command, use \"help <command>\""
            ]
 
@@ -115,3 +115,8 @@ printSlot (Slot bid count dmg) = let dmgpart = case dmg of
                                                   Just name -> name
                                                   Nothing -> show bid
                                  in Just $ countpart ++ itempart ++ dmgpart
+
+dimensionCommandE :: forall t. Reflex t => Event t ChatCommand -> Dynamic t Dimension -> Event t SBPacket
+dimensionCommandE cmd dim = chatString . show <$> dimEvents
+    where dimEvents :: Event t Dimension
+          dimEvents = tag (current dim) (filterCommand "dimension" cmd)

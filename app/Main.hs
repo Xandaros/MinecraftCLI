@@ -116,11 +116,13 @@ minecraftBot botName inbound tick = do
     let inventoryActions  = mergeList [dropCommandE commands]
     (transactionPackets, localInventoryActions) <- transactionsD inventoryActions (transactionConfirmationsE inbound)
     inventory <- inventoryD (leftmost $ [(cbInventoryActionsE inbound), localInventoryActions])
+    dimension <- dimensionD inbound
     pure ( foldl1 (<>) [ NE.toList <$> (fmap (SBChatMessage . SBChatMessagePayload . view network) <$> commandMessagesE commands)
                        , transactionPackets
                        , NE.toList <$> (mergeList [ whereCommandE commands playerPos
                                                   , mkPPAL <$> tag (current playerPos) tick
                                                   , inventoryCommandE commands inventory
+                                                  , dimensionCommandE commands dimension
                                                   --, chatString . show <$> tagPromptlyDyn transactions (ffilter ((==0) . (`mod` 10)) seconds)
                                                   ])
                        ]
@@ -148,6 +150,14 @@ playerPositionD inbound tp = do
                 Just (x ^. from network, y ^. from network, z ^. from network)
             _ -> Nothing
     holdDyn (0, 0, 0) $ leftmost [inboundUpdate, tp]
+
+dimensionD :: (MonadHold t m, Reflex t) => Event t CBPacket -> m (Dynamic t Dimension)
+dimensionD inbound = do
+    let inboundUpdate = fforMaybe inbound $ \case
+            CBRespawn (CBRespawnPayload dim _ _ _) -> Just dim
+            CBJoinGame (CBJoinGamePayload _ _ dim _ _ _ _) -> Just dim
+            _ -> Nothing
+    holdDyn Overworld inboundUpdate
 
 chatMessageE :: Reflex t => Event t CBPacket -> Event t ChatMsg
 chatMessageE inbound = fforMaybe inbound $ \case
