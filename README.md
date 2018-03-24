@@ -70,6 +70,7 @@ Connect to a server:
 
 ```javascript
 connect <profile> <server>
+```
 
 ### Dimension
 
