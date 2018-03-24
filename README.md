@@ -7,6 +7,13 @@ MinecraftCLI is a command line application to join Minecraft servers with a vali
 Run the binary and a % prompt will be displayed. Enter any of the following commands and use quit to exit.
 
 ### Profiles
+
+Show available commands:
+
+```javascript
+profiles help
+```
+
 List all profiles:
 
 ```javascript
@@ -15,5 +22,10 @@ profiles list
 Add a new profile:
 
 ```javascript
-profiles new <Minecraft email> 
+profiles new <login or Mojang account/email> 
+```
+Delete a profile:
+
+```javascript
+profiles delete <profile name>
 ```
