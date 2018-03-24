@@ -64,7 +64,7 @@ servers delete <server name>
 
 ### Connect
 
-Connect to a server specifying a user profile and a server. The server name must match the server name that `servers list`  displays.
+Connect to a server specifying a user profile and a server. The profile name must match one of those listed with `profiles list` and server name must match the server name that `servers list` displays.
 
 Connect to a server:
 
