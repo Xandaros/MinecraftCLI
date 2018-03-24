@@ -6,6 +6,14 @@ MinecraftCLI is a command line application to join Minecraft servers with a vali
 
 Run the binary and a % prompt will be displayed. Enter any of the following commands and use quit to exit.
 
+### Help
+
+Display all commands:
+
+```javascript
+help
+```
+
 ### Profiles
 
 Show available commands:
