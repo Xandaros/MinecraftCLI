@@ -70,3 +70,11 @@ Connect to a server:
 
 ```javascript
 connect <profile> <server>
+
+### Dimension
+
+Display the Minecraft dimension that a player account is in. e.g. Overworld
+
+```javascript
+dimension
+```
