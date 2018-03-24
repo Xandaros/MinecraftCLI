@@ -37,3 +37,27 @@ Delete a profile:
 ```javascript
 profiles delete <profile name>
 ```
+
+### Servers
+
+Show available commands:
+
+```javascript
+servers help
+```
+
+List all servers:
+
+```javascript
+servers list
+```
+Add a new server:
+
+```javascript
+servers new <name> <address: IP or DNS resolvable URL>
+```
+Delete a server:
+
+```javascript
+servers delete <server name>
+```
