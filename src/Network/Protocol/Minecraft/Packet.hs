@@ -44,6 +44,19 @@ ConfirmTransaction Playing 0x11
     deriving (Show, Generic)
     instance (Binary)
 
+CloseWindow Playing 0x12
+    windowId :: Word8
+    deriving (Show, Generic)
+    instance (Binary)
+
+OpenWindow Playing 0x13
+    windowId :: Word8
+    windowType :: NetworkText
+    windowTitle :: NetworkText
+    numberOfSlots :: Word8
+    deriving (Show, Generic)
+    instance (Binary)
+
 WindowItems Playing 0x14
     windowId :: Int8
     count :: Int16
@@ -154,6 +167,11 @@ ClickWindow Playing 0x07
     deriving (Show, Generic)
     instance (Binary)
 
+CloseWindow Playing 0x08
+    windowId :: Word8
+    deriving (Show, Generic)
+    instance (Binary)
+
 KeepAlive Playing 0x0B
     keepAliveId :: Int64
     deriving (Show, Generic)
@@ -166,6 +184,16 @@ PlayerPositionAndLook Playing 0x0E
     yaw :: NetworkFloat
     pitch :: NetworkFloat
     onGround :: Bool
+    deriving (Show, Generic)
+    instance (Binary)
+
+PlayerBlockPlacement Playing 0x1F
+    location :: Position
+    face :: VarInt
+    hand :: VarInt
+    cursorX :: NetworkFloat
+    cursorY :: NetworkFloat
+    cursorZ :: NetworkFloat
     deriving (Show, Generic)
     instance (Binary)
 |]

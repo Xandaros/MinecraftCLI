@@ -1,8 +1,9 @@
 {-# LANGUAGE TemplateHaskell, QuasiQuotes, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings, MultiWayIf, DataKinds, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, MultiWayIf, DataKinds, ScopedTypeVariables, LambdaCase #-}
 module Commands where
 
 import           Control.Lens
+import           Control.Monad (join)
 import           Data.List (intersperse)
 import           Data.List.NonEmpty (NonEmpty((:|)))
 import qualified Data.Map as Map
@@ -120,3 +121,28 @@ dimensionCommandE :: forall t. Reflex t => Event t ChatCommand -> Dynamic t Dime
 dimensionCommandE cmd dim = chatString . show <$> dimEvents
     where dimEvents :: Event t Dimension
           dimEvents = tag (current dim) (filterCommand "dimension" cmd)
+
+closeWindowCommandE :: forall t. Reflex t => Event t ChatCommand -> Dynamic t (Maybe CBOpenWindowPayload) -> Event t SBPacket
+closeWindowCommandE cmd window = fforMaybe evs $ \case
+        Nothing -> Nothing
+        Just inp -> Just $ SBCloseWindow (SBCloseWindowPayload (inp ^. windowId))
+    where evs :: Event t (Maybe CBOpenWindowPayload)
+          evs = tag (current window) (filterCommand "closewindow" cmd)
+
+placeBlockCommandE :: forall t. Reflex t => Event t ChatCommand -> Event t SBPacket
+placeBlockCommandE cmd = fforMaybe (filterCommand "placeBlock" cmd) $ \c ->
+    let args = c ^. arguments
+        getArg n = read $ T.unpack (args !! n)
+        x = getArg 0
+        y = getArg 1
+        z = getArg 2
+        pos = Position x y z
+    in if | length args == 3 -> Just $ SBPlayerBlockPlacement (SBPlayerBlockPlacementPayload pos 1 0 0 0 0)
+          | otherwise -> Nothing
+
+windowCommandE :: forall t. Reflex t => Event t ChatCommand -> Dynamic t (Maybe CBOpenWindowPayload) -> Event t SBPacket
+windowCommandE cmd window = evs <&> \case
+    Nothing -> chatString "None"
+    Just w -> chatString (show w)
+    where evs :: Event t (Maybe CBOpenWindowPayload)
+          evs = tag (current window) (filterCommand "currentWindow" cmd)

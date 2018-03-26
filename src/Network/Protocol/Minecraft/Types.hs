@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeOperators, DefaultSignatures, FlexibleContexts, TypeSynonymInstances, GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BinaryLiterals, FlexibleInstances, OverloadedStrings, DeriveLift, LambdaCase, RecordWildCards #-}
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, TemplateHaskell, DeriveGeneric, StandaloneDeriving #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances, ViewPatterns #-}
 module Network.Protocol.Minecraft.Types where
 
 import           Control.Applicative (empty, (<|>))
@@ -315,10 +315,31 @@ isEmptySlot :: Slot -> Bool
 isEmptySlot (Slot (-1) _ _) = True
 isEmptySlot _ = False
 
+data Position = Position Int Int Int
+    deriving (Show)
+
+instance Binary Position where
+    get = do
+        bytes <- getWord64be
+        let xval = bytes `shiftR` 38
+            yval = (bytes `shiftR` 26) .&. 0xFFF
+            zval = (bytes `shiftL` 38) `shiftR` 38
+            x = if xval > 2^25
+                   then xval - 2^26
+                   else xval
+            y = if yval > 2^11
+                   then yval - 2^12
+                   else yval
+            z = if zval > 2^25
+                   then zval - 2^26
+                   else zval
+        pure $ Position (fromIntegral x) (fromIntegral y) (fromIntegral z)
+    put (Position (fromIntegral -> x) (fromIntegral -> y) (fromIntegral -> z)) = do
+        put ((((x .&. 0x3FFFFFF) `shiftL` 38) .|. ((y .&. 0xFFF) `shiftL` 26) .|. (z .&. 0x3FFFFFF)) :: Int64)
+
 -- TODO:
 -- Entity Metadata
 -- NBT Tag
--- Position
 -- Angle (Word8)
 -- UUID
 -- 

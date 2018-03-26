@@ -49,7 +49,7 @@ library
                      , unordered-containers
                      , vector
   default-language:    Haskell2010
-  ghc-options:       -fdefer-typed-holes -Wall -Wno-name-shadowing
+  ghc-options:       -fdefer-typed-holes -Wall -Wno-name-shadowing -Wno-type-defaults
 
 executable MinecraftCLI
   hs-source-dirs:      app

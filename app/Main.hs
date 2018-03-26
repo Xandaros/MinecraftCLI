@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards, OverloadedStrings, TupleSections, Arrows, ViewPatterns, QuasiQuotes, TemplateHaskell #-}
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, MultiParamTypeClasses, FunctionalDependencies #-}
-{-# LANGUAGE LambdaCase, MultiWayIf #-}
+{-# LANGUAGE LambdaCase, MultiWayIf, RecursiveDo #-}
 module Main where
 
 import           Data.Aeson
@@ -16,6 +16,7 @@ import           Control.Lens
 import           Control.Monad (void, when, forever, forM_)
 import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.IO.Class
+import           Data.Int
 import           Data.IORef
 import           Data.List (isPrefixOf)
 import qualified Data.Text as T
@@ -45,7 +46,9 @@ import Debug.Trace
 
 minecraftThread :: TChan CBPacket -> TChan [SBPacket] -> IORef Bool -> Profile -> Server -> (String -> IO ()) -> IO ()
 minecraftThread inbound outbound shutdown profile server printfunc = do
-    void $ connect (T.unpack $ server ^. serverAddress) Nothing $ do
+    let addr = takeWhile (/= ':') . T.unpack $ server ^. serverAddress
+        port = readMay $ drop 1 . dropWhile (/= ':') . T.unpack $ server ^. serverAddress
+    void $ connect addr port $ do
         liftIO $ printfunc "Sending handshake"
         handshake
         liftIO $ printfunc "Handshake sent"
@@ -116,6 +119,8 @@ minecraftBot botName inbound tick = do
     let inventoryActions  = mergeList [dropCommandE commands]
     (transactionPackets, localInventoryActions) <- transactionsD inventoryActions (transactionConfirmationsE inbound)
     inventory <- inventoryD (leftmost $ [(cbInventoryActionsE inbound), localInventoryActions])
+    rec currentWindow <- currentWindowD inbound (() <$ windowCloseE)
+        windowCloseE <- pure $ closeWindowCommandE commands currentWindow
     dimension <- dimensionD inbound
     pure ( foldl1 (<>) [ NE.toList <$> (fmap (SBChatMessage . SBChatMessagePayload . view network) <$> commandMessagesE commands)
                        , transactionPackets
@@ -123,6 +128,9 @@ minecraftBot botName inbound tick = do
                                                   , mkPPAL <$> tag (current playerPos) tick
                                                   , inventoryCommandE commands inventory
                                                   , dimensionCommandE commands dimension
+                                                  , placeBlockCommandE commands
+                                                  , windowCloseE
+                                                  , windowCommandE commands currentWindow
                                                   --, chatString . show <$> tagPromptlyDyn transactions (ffilter ((==0) . (`mod` 10)) seconds)
                                                   ])
                        ]
@@ -130,9 +138,20 @@ minecraftBot botName inbound tick = do
                      , T.pack . show <$> commands
                      , windowItemsE inbound
                      , T.pack . show <$> transactionConfirmationsE inbound
+                     , T.pack . show <$> placeBlockCommandE commands
                      ]
          , void $ quitCommandE commands
          )
+
+currentWindowD :: (Reflex t, MonadHold t m) => Event t CBPacket -> Event t () -> m (Dynamic t (Maybe CBOpenWindowPayload))
+currentWindowD inbound close = do
+    let opens = fforMaybe inbound $ \case
+                    CBOpenWindow pl -> Just $ Just pl
+                    CBCloseWindow _ -> Just Nothing
+                    _ -> Nothing
+        closes = Nothing <$ close
+        evs = leftmost [closes, opens]
+    holdDyn Nothing evs
 
 windowItemsE :: Reflex t => Event t CBPacket -> Event t Text
 windowItemsE inbound = fforMaybe inbound $ \case
