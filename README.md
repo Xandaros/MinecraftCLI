@@ -2,6 +2,17 @@
 
 MinecraftCLI is a command line application to join Minecraft servers with a valid Mojang or Legacy account, without needing the full Minecraft client. The application has several functions as described below.
 
+## Installation
+### Dependencies:
+* Stack
+* Mcrypt
+
+### Procedure:
+1. `stack build`
+2. `stack exec -- MinecraftCLI`. *Alternatively* `stack install` from project root to install to `~/.local/bin`.
+
+Note: To locate MinecraftCLI, execute `cd $(stack path --dist-dir)/build/MinecraftCLI` (bash specific)
+
 ## Usage
 
 Run the binary and a % prompt will be displayed. Enter any of the following commands and use quit to exit.
